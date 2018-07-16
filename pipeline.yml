@@ -1,0 +1,1476 @@
+---
+resource_types:
+- name: pivnet
+  type: docker-image
+  source:
+    repository: pivotalcf/pivnet-resource
+    tag: latest-final
+resources:
+- name: template
+  type: git
+  source:
+    uri: https://github.com/pivotal-cf/terraforming-aws.git
+    tag_filter: v0.19.0
+- name: terraform-state
+  type: s3
+  source:
+    disable_ssl: false
+    access_key_id: ((aws_access_key_id))
+    secret_access_key: ((aws_secret_access_key))
+    endpoint: ((s3_endpoint))
+    bucket: ((s3_output_bucket))
+    region_name: ((aws_region))
+    versioned_file: terraform.tfstate
+- name: pas
+  type: pivnet
+  source:
+    api_token: ((pivnet_api_token))
+    product_slug: elastic-runtime
+    product_version: 2\.1\..*
+- name: pcf-pipelines
+  type: git
+  source:
+    uri: https://github.com/pivotal-cf/pcf-pipelines.git
+    tag_filter: v0.23.6
+- name: pivnet-opsmgr
+  type: pivnet
+  source:
+    api_token: ((pivnet_api_token))
+    product_slug: ops-manager
+    product_version: 2\.1\..*
+
+jobs:
+- name: bootstrap-terraform-state
+  build_logs_to_retain: 5
+  serial_groups: [terraform]
+  plan:
+  - get: pcf-pipelines
+  - task: create-bucket
+    params:
+      S3_BUCKET_TERRAFORM: ((s3_output_bucket))
+      S3_ENDPOINT: ((s3_endpoint))
+      AWS_DEFAULT_REGION: ((aws_region))
+      AWS_ACCESS_KEY_ID: ((aws_access_key_id))
+      AWS_SECRET_ACCESS_KEY: ((aws_secret_access_key))
+    config:
+      platform: linux
+      image_resource:
+        type: docker-image
+        source:
+          repository: mesosphere/aws-cli
+      run:
+        path: sh
+        args: 
+        - -c
+        - |
+          LS=$(aws --endpoint-url ${S3_ENDPOINT} s3 ls | grep ${S3_BUCKET_TERRAFORM})
+          if [ "${LS}" = "" ];then
+            aws --endpoint-url ${S3_ENDPOINT} s3 mb s3://${S3_BUCKET_TERRAFORM}
+            aws --endpoint-url ${S3_ENDPOINT} s3api put-bucket-versioning --bucket ${S3_BUCKET_TERRAFORM} --versioning-configuration Status=Enabled
+          else
+            echo "${S3_BUCKET_TERRAFORM} already exists."
+          fi
+  - task: create-terraform-state
+    params:
+      S3_BUCKET_TERRAFORM: ((s3_output_bucket))
+      S3_ENDPOINT: ((s3_endpoint))
+      S3_REGION: ((aws_region))
+      AWS_ACCESS_KEY_ID: ((aws_access_key_id))
+      AWS_SECRET_ACCESS_KEY: ((aws_secret_access_key))
+    file: pcf-pipelines/tasks/create-initial-terraform-state/task.yml
+
+
+- name: pave-aws
+  build_logs_to_retain: 5
+  serial_groups: [terraform]
+  plan:
+  - aggregate:
+    - get: template
+    - get: terraform-state
+    - get: pivnet-opsmgr
+      params:
+        globs: ["*AWS.yml"]
+  - task: find-ami
+    params:
+      REGION: ((aws_region))
+    config:
+      platform: linux
+      image_resource:
+        type: docker-image
+        source:
+          repository: pcfnorm/rootfs
+      inputs:
+      - name: pivnet-opsmgr
+      outputs:
+      - name: ami
+      run:
+        path: bash
+        args:
+        - -c
+        - |
+          set -eo pipefail 
+          ami=$(grep $REGION pivnet-opsmgr/*.yml | cut -d' ' -f2)
+          echo $ami > ami/ami
+  - task: terraform-apply
+    params:
+      TF_VAR_region: ((aws_region))
+      TF_VAR_access_key: ((aws_access_key_id))
+      TF_VAR_secret_key: ((aws_secret_access_key))
+      TF_VAR_availability_zones: ((availability_zones))
+      TF_VAR_env_name: ((env_name))
+      TF_VAR_dns_suffix: ((dns_suffix))
+      TF_VAR_rds_instance_count: ((rds_instance_count))
+      TF_VAR_rds_instance_class: ((rds_instance_class))
+      TF_VAR_ops_manager_instance_type: ((ops_manager_instance_type))
+      TF_VAR_ssl_cert: ((ssl_cert))
+      TF_VAR_ssl_private_key: ((ssl_private_key))
+    config:
+      platform: linux
+      image_resource:
+        type: docker-image
+        source:
+          repository: hashicorp/terraform
+          tag: full
+      inputs:
+      - name: template
+      - name: terraform-state
+      - name: ami
+      outputs:
+      - name: tfstate-output
+      run:
+        path: bash
+        args: 
+        - -c
+        - |
+          set -eo pipefail 
+          export TF_VAR_ops_manager_ami=$(cat ami/ami)
+          
+          # Customize
+          # use smaller infra for poc
+ 
+          sed -i 's/t2.medium/t2.nano/g' template/nat.tf
+          sed -i "s/multi_az               = true/multi_az               = false$LF  storage_type           = \"standard\"/g" template/rds.tf
+          sed -i '/iops/d' template/rds.tf 
+          sed -i "s/resource \"aws_elb\" \"tcp_elb\" {/resource \"aws_elb\" \"tcp_elb\" {$LF  count                     = 0/g" template/elb.tf
+          sed -i "s/resource \"aws_elb\" \"ssh_elb\" {/resource \"aws_elb\" \"ssh_elb\" {$LF  count                     = 0/g" template/elb.tf
+          sed -i "s/resource \"aws_route53_record\" \"ssh\" {/resource \"aws_route53_record\" \"ssh\" {$LF  count   = 0/g" template/dns.tf
+          sed -i "s/resource \"aws_route53_record\" \"tcp\" {/resource \"aws_route53_record\" \"tcp\" {$LF  count   = 0/g" template/dns.tf
+          sed -i "s/resource \"aws_route53_record\" \"tcp\" {/resource \"aws_route53_record\" \"tcp\" {$LF  count   = 0/g" template/dns.tf
+          sed -i "s/resource \"aws_route53_record\" \"tcp\" {/resource \"aws_route53_record\" \"tcp\" {$LF  count   = 0/g" template/dns.tf
+          sed -i 's/${aws_elb.ssh_elb.name}//g' template/outputs.tf
+          sed -i 's/${aws_elb.tcp_elb.name}//g' template/outputs.tf
+
+          cat <<'EOD' > template/spot-instance.tf
+          resource "aws_iam_policy" "spot_instance" {
+              name = "${var.env_name}_spot_instance"
+              policy = <<EOF
+          {
+          "Version": "2012-10-17",
+          "Statement": [
+              {
+                  "Action": "ec2:RequestSpotInstances",
+                  "Effect": "Allow",
+                  "Resource": "*"
+              },
+              {
+                  "Action": "ec2:DescribeSpotInstanceRequests",
+                  "Effect": "Allow",
+                  "Resource": "*"
+              },
+              {
+                  "Action": "ec2:CancelSpotInstanceRequests",
+                  "Effect": "Allow",
+                  "Resource": "*"
+              },
+              {
+                  "Action": "iam:CreateServiceLinkedRole",
+                  "Effect": "Allow",
+                  "Resource": "*"
+              }
+          ]
+          }
+          EOF
+          }
+
+          resource "aws_iam_user_policy_attachment" "spot_instance" {
+              user       = "${aws_iam_user.ops_manager.name}"
+              policy_arn = "${aws_iam_policy.spot_instance.arn}"
+          }
+          EOD
+
+
+          terraform init \
+                    template
+          terraform plan \
+                    -out terraform.tfplan \
+                    -state terraform-state/terraform.tfstate \
+                    template
+          terraform apply \
+                    -state-out tfstate-output/terraform.tfstate \
+                    terraform.tfplan
+    ensure:
+      put: terraform-state
+      params:
+        file: tfstate-output/terraform.tfstate
+
+
+- name: configure-dns
+  build_logs_to_retain: 5
+  serial: true
+  plan:
+  - aggregate:
+    - get: terraform-state
+      passed:
+      - pave-aws
+      trigger: true
+  - task: configure-dns
+    params:
+      CLOUDFLARE_API_KEY: ((cloudflare_api_key))
+      CLOUDFLARE_EMAIL: ((cloudflare_email))
+      CLOUDFLARE_ZONE_ID: ((cloudflare_zone_id))
+    config:
+      platform: linux
+      image_resource:
+        type: docker-image
+        source:
+          repository: pcfnorm/rootfs
+          tag: 1.0.19
+      inputs:
+      - name: terraform-state
+      run:
+        path: bash
+        args: 
+        - -c
+        - |
+          set -eo pipefail 
+          cp terraform-state/terraform.tfstate ./
+          
+          OPSMAN_DOMAIN_OR_IP_ADDRESS=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.ops_manager_public_ip.value')
+          OPSMAN_DOMAIN=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.ops_manager_dns.value')
+          SYSTEM_DOMAIN=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.sys_domain.value')
+          APPS_DOMAIN=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.apps_domain.value')
+          TCP_DOMAIN=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.tcp_domain.value')
+          WEB_LB_IP=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].resources["aws_elb.web_elb"].primary.attributes.dns_name')
+          #SSH_LB_IP=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].resources["ssh_elb.web_elb"].primary.attributes.dns_name')
+          #TCP_LB_IP=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].resources["tcp_elb.web_elb"].primary.attributes.dns_name')
+
+          RECORDS=""
+          RECORDS="${RECORDS} ${OPSMAN_DOMAIN},${OPSMAN_DOMAIN_OR_IP_ADDRESS}"
+          RECORDS="${RECORDS} *.${SYSTEM_DOMAIN},${WEB_LB_IP}"
+          #RECORDS="${RECORDS} ssh.${SYSTEM_DOMAIN},${SSH_LB_IP}"
+          RECORDS="${RECORDS} *.${APPS_DOMAIN},${WEB_LB_IP}"
+          #RECORDS="${RECORDS} ${TCP_DOMAIN},${TCP_LB_IP}"
+
+          if [ "${CLOUDFLARE_API_KEY}" = "" ];then
+            echo "CLOUDFLARE_API_KEY is not set."
+            exit 0
+          fi
+
+          DNS_RECORDS=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}/dns_records?per_page=1000" \
+                   -H "X-Auth-Email: ${CLOUDFLARE_EMAIL}" \
+                   -H "X-Auth-Key: ${CLOUDFLARE_API_KEY}" \
+                   -H "Content-Type: application/json" \
+                   | jq -r '.result')
+
+          for r in ${RECORDS};do
+              HOSTNAME=`echo $r | awk -F ',' '{print $1}'`
+              EXTERNAL_IP=`echo $r | awk -F ',' '{print $2}'`
+              echo "$HOSTNAME  $EXTERNAL_IP"
+              RECORD=`echo $DNS_RECORDS | jq -r ". | map(select(.name == \"$HOSTNAME\"))[0]"`
+              if [ "$RECORD" != "null" ];then
+                RECORD_ID=`echo $RECORD | jq -r ".id"`
+                echo "Deleting a record ($RECORD_ID) ..."
+                curl -X DELETE "https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}/dns_records/${RECORD_ID}" \
+                     -H "X-Auth-Email: ${CLOUDFLARE_EMAIL}" \
+                     -H "X-Auth-Key: ${CLOUDFLARE_API_KEY}" \
+                     -H "Content-Type: application/json" \
+                     -w '\n'
+              fi
+              echo "Creating an A record"
+              curl -X POST "https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}/dns_records" \
+                   -H "X-Auth-Email: ${CLOUDFLARE_EMAIL}" \
+                   -H "X-Auth-Key: ${CLOUDFLARE_API_KEY}" \
+                   -H "Content-Type: application/json" \
+                   -d "{\"type\": \"A\", \"name\": \"$HOSTNAME\", \"content\": \"$EXTERNAL_IP\", \"proxied\": false, \"ttl\": 120}" \
+                   -w '\n'
+          done
+
+- name: config-authentication
+  build_logs_to_retain: 5
+  serial_groups: [terraform]
+  plan:
+  - aggregate:
+    - get: terraform-state
+      passed:
+      - configure-dns
+      trigger: true
+    - get: pcf-pipelines
+  - task: config-opsman
+    params:
+      OPS_MGR_USR: ((ops_mgr_usr))
+      OPS_MGR_PWD: ((ops_mgr_pwd))
+      OM_DECRYPTION_PWD: ((om_decryption_pwd))
+    config:
+      platform: linux
+      image_resource:
+        type: docker-image
+        source:
+          repository: pcfnorm/rootfs
+          tag: 1.0.19
+      inputs:
+      - name: terraform-state
+      - name: pcf-pipelines
+      run:
+        path: bash
+        args: 
+        - -c
+        - |
+          set -euo pipefail          
+          export OPSMAN_DOMAIN_OR_IP_ADDRESS=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.ops_manager_dns.value')
+          echo "OSPMAN: https://$OPSMAN_DOMAIN_OR_IP_ADDRESS"
+          ./pcf-pipelines/tasks/config-opsman/task.sh
+
+- name: add-vm-types
+  build_logs_to_retain: 5
+  plan:
+  - aggregate:
+    - get: terraform-state
+      passed:
+      - config-authentication
+      trigger: true
+  - task: add-vm-types
+    params:
+      OPS_MGR_USR: ((ops_mgr_usr))
+      OPS_MGR_PWD: ((ops_mgr_pwd))
+      OPS_MGR_TRUSTED_CERTS: ((ops_mgr_trusted_certs))
+    config:
+      platform: linux
+      image_resource:
+        type: docker-image
+        source:
+          repository: pcfnorm/rootfs
+          tag: 1.0.19
+      inputs:
+      - name: terraform-state
+      caches:
+      - path: downloads 
+      run:
+        path: bash
+        args: 
+        - -c
+        - |
+          set -eu
+          cp /usr/local/bin/om-linux /usr/local/bin/om
+          cp terraform-state/terraform.tfstate ./
+          cd downloads
+          if [ ! -f ./yq ];then
+            curl -Lo ./yq https://github.com/mikefarah/yq/releases/download/1.15.0/yq_linux_amd64
+          fi
+          if [ ! -f ./bosh ];then
+            curl -Lo ./bosh https://s3.amazonaws.com/bosh-cli-artifacts/bosh-cli-3.0.1-linux-amd64
+          fi
+          cd - > /dev/null
+          install ./downloads/yq /usr/local/bin/yq
+          install ./downloads/bosh /usr/local/bin/bosh
+
+          OPSMAN_DOMAIN_OR_IP_ADDRESS=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.ops_manager_dns.value')
+
+          om --target https://$OPSMAN_DOMAIN_OR_IP_ADDRESS \
+             --skip-ssl-validation \
+             --username "$OPS_MGR_USR" \
+             --password "$OPS_MGR_PWD" \
+             curl \
+             --silent \
+             --path /api/v0/vm_types > vm_types.json
+
+          cat <<EOF > ops.yml
+          - type: replace
+            path: /vm_types/name=t2.nano?
+            value: 
+              cpu: 1
+              ephemeral_disk: 8192
+              name: t2.nano
+              ram: 512
+          - type: replace
+            path: /vm_types/name=t2.medium?
+            value: 
+              cpu: 2
+              ephemeral_disk: 32768
+              name: t2.medium
+              ram: 4096
+          - type: replace
+            path: /vm_types/name=m4.large?
+            value: 
+              cpu: 2
+              ephemeral_disk: 32768
+              name: m4.large
+              ram: 8192
+          - type: remove
+            path: /vm_types/name=c4.large?
+          EOF
+
+          bosh int vm_types.json | yq r - -j | jq . > vm_types_old.json
+          bosh int vm_types.json -o ops.yml | yq r - -j | jq . > vm_types_new.json
+
+          diff vm_types_old.json vm_types_new.json | cat
+
+          om --target https://$OPSMAN_DOMAIN_OR_IP_ADDRESS \
+             --skip-ssl-validation \
+             --username "$OPS_MGR_USR" \
+             --password "$OPS_MGR_PWD" \
+             curl \
+             --silent \
+             --request PUT \
+             --path /api/v0/vm_types \
+             --data "$(cat vm_types_new.json)"
+
+- name: add-vm-extensions
+  build_logs_to_retain: 5
+  plan:
+  - aggregate:
+    - get: terraform-state
+      passed:
+      - config-authentication
+      trigger: true
+  - task: add-vm-extensions
+    params:
+      OPS_MGR_USR: ((ops_mgr_usr))
+      OPS_MGR_PWD: ((ops_mgr_pwd))
+      OPS_MGR_TRUSTED_CERTS: ((ops_mgr_trusted_certs))
+    config:
+      platform: linux
+      image_resource:
+        type: docker-image
+        source:
+          repository: pcfnorm/rootfs
+          tag: 1.0.19
+      inputs:
+      - name: terraform-state
+      caches:
+      - path: downloads 
+      run:
+        path: bash
+        args: 
+        - -c
+        - |
+          set -u
+          cp /usr/local/bin/om-linux /usr/local/bin/om
+          cp terraform-state/terraform.tfstate ./
+          cd downloads
+          if [ ! -f ./bosh ];then
+            curl -Lo ./bosh https://s3.amazonaws.com/bosh-cli-artifacts/bosh-cli-3.0.1-linux-amd64
+          fi
+          cd - > /dev/null
+          install ./downloads/bosh /usr/local/bin/bosh
+
+          OPSMAN_DOMAIN_OR_IP_ADDRESS=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.ops_manager_dns.value')
+          # Change me
+          SPOT_INSTANCES=""
+          SPOT_INSTANCES="$SPOT_INSTANCES m4.large,0.0320"
+          SPOT_INSTANCES="$SPOT_INSTANCES t2.micro,0.0050"
+          SPOT_INSTANCES="$SPOT_INSTANCES t2.small,0.0095"
+          SPOT_INSTANCES="$SPOT_INSTANCES t2.medium,0.0190"
+          SPOT_INSTANCES="$SPOT_INSTANCES r4.xlarge,0.0655"
+
+          for spot in ${SPOT_INSTANCES};do
+            TYPE=`echo $spot | awk -F ',' '{print $1}'`
+            PRICE=`echo $spot | awk -F ',' '{print $2}'`
+            echo "$TYPE=$PRICE"
+            om --target "https://${OPSMAN_DOMAIN_OR_IP_ADDRESS}" \
+             --skip-ssl-validation \
+             --username "${OPS_MGR_USR}" \
+             --password "${OPS_MGR_PWD}" \
+             create-vm-extension \
+             --name spot-instance-${TYPE} \
+             --cloud-properties '{"spot_bid_price":"'$PRICE'", "spot_ondemand_fallback": true}'
+          done
+
+          om --target "https://${OPSMAN_DOMAIN_OR_IP_ADDRESS}" \
+             --skip-ssl-validation \
+             --username "${OPS_MGR_USR}" \
+             --password "${OPS_MGR_PWD}" \
+             create-vm-extension \
+             --name standard-disk \
+             --cloud-properties '{"root_disk": {"type": "standard"}, "ephemeral_disk": {"type": "standard"}}'
+          echo "ok anyway"
+
+- name: prepare-rds
+  build_logs_to_retain: 5
+  serial_groups: [terraform]
+  plan:
+  - aggregate:
+    - get: terraform-state
+      passed:
+      - config-authentication
+      trigger: true
+  - task: prepare-rds
+    params:
+      OPS_MGR_USR: ((ops_mgr_usr))
+      OPS_MGR_PWD: ((ops_mgr_pwd))
+      OPS_MGR_TRUSTED_CERTS: ((ops_mgr_trusted_certs))
+    config:
+      platform: linux
+      image_resource:
+        type: docker-image
+        source:
+          repository: pcfnorm/rootfs
+          tag: 1.0.19
+      inputs:
+      - name: terraform-state
+      run:
+        path: bash
+        args: 
+        - -c
+        - |
+          set -euo pipefail
+          OPSMAN_DOMAIN_OR_IP_ADDRESS=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.ops_manager_dns.value')
+          OPS_MANAGER_SSH_PRIVATE_KEY=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.ops_manager_ssh_private_key.value')
+          cat <<EOF > opsman.pem
+          ${OPS_MANAGER_SSH_PRIVATE_KEY}
+          EOF
+          chmod 600 opsman.pem
+          db_host=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.rds_address.value')
+          db_username=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.rds_username.value')
+          db_password=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.rds_password.value')
+          cat > databases.sql <<EOF
+          CREATE DATABASE IF NOT EXISTS console;
+          CREATE DATABASE IF NOT EXISTS uaa;
+          CREATE DATABASE IF NOT EXISTS ccdb;
+          CREATE DATABASE IF NOT EXISTS notifications;
+          CREATE DATABASE IF NOT EXISTS autoscale;
+          CREATE DATABASE IF NOT EXISTS app_usage_service;
+          CREATE DATABASE IF NOT EXISTS routing;
+          CREATE DATABASE IF NOT EXISTS diego;
+          CREATE DATABASE IF NOT EXISTS account;
+          CREATE DATABASE IF NOT EXISTS nfsvolume;
+          CREATE DATABASE IF NOT EXISTS networkpolicyserver;
+          CREATE DATABASE IF NOT EXISTS silk;
+          CREATE DATABASE IF NOT EXISTS locket;
+          CREATE DATABASE IF NOT EXISTS credhub;
+          EOF
+          scp -i opsman.pem -o StrictHostKeyChecking=no databases.sql "ubuntu@${OPSMAN_DOMAIN_OR_IP_ADDRESS}:/tmp/."
+          ssh -i opsman.pem -o StrictHostKeyChecking=no "ubuntu@${OPSMAN_DOMAIN_OR_IP_ADDRESS}" "mysql -h $db_host -u $db_username -p$db_password < /tmp/databases.sql"
+- name: config-director
+  build_logs_to_retain: 5
+  serial_groups: [terraform]
+  plan:
+  - aggregate:
+    - get: terraform-state
+      passed:
+      - add-vm-types
+      trigger: true
+  - task: config-director
+    params:
+      OPS_MGR_USR: ((ops_mgr_usr))
+      OPS_MGR_PWD: ((ops_mgr_pwd))
+      OPS_MGR_TRUSTED_CERTS: ((ops_mgr_trusted_certs))
+    config:
+      platform: linux
+      image_resource:
+        type: docker-image
+        source:
+          repository: pcfnorm/rootfs
+          tag: 1.0.19
+      inputs:
+      - name: terraform-state
+      run:
+        path: bash
+        args: 
+        - -c
+        - |
+          set -euo pipefail
+          cp /usr/local/bin/om-linux /usr/local/bin/om
+          cp terraform-state/terraform.tfstate ./
+          OPSMAN_DOMAIN_OR_IP_ADDRESS=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.ops_manager_dns.value')
+          TF_DIR=./terraform-state
+          # IaaS
+          ACCESS_KEY_ID=$(cat $TF_DIR/terraform.tfstate | jq -r '.modules[0].outputs.ops_manager_iam_user_access_key.value')
+          SECRET_ACCESS_KEY=$(cat $TF_DIR/terraform.tfstate | jq -r '.modules[0].outputs.ops_manager_iam_user_secret_key.value')
+          SECURITY_GROUP=$(cat $TF_DIR/terraform.tfstate | jq -r '.modules[0].outputs.vms_security_group_id.value')
+          KEY_PAIR_NAME=$(cat $TF_DIR/terraform.tfstate | jq -r '.modules[0].outputs.ops_manager_ssh_public_key_name.value')
+          SSH_PRIVATE_KEY=$(cat $TF_DIR/terraform.tfstate | jq -r '.modules[0].outputs.ops_manager_ssh_private_key.value' | sed 's/^/    /')
+          REGION=$(cat $TF_DIR/terraform.tfstate | jq -r '.modules[0].outputs.region.value')
+          ## Director
+          OPS_MANAGER_BUCKET=$(cat $TF_DIR/terraform.tfstate | jq -r '.modules[0].outputs.ops_manager_bucket.value')
+          ## Networks
+          AVAILABILITY_ZONES=$(cat $TF_DIR/terraform.tfstate | jq -r '.modules[0].outputs.azs.value | map({name: .})' | tr -d '\n' | tr -d '"')
+          MANAGEMENT_NETWORK_NAME=management
+          MANAGEMENT_IAAS_IDENTIFIER_0=$(cat $TF_DIR/terraform.tfstate | jq -r '.modules[0].outputs.management_subnet_ids.value[0]')
+          MANAGEMENT_NETWORK_CIDR_0=$(cat $TF_DIR/terraform.tfstate | jq -r '.modules[0].outputs.management_subnet_cidrs.value[0]')
+          MANAGEMENT_RESERVED_IP_RANGES_0=$(echo $MANAGEMENT_NETWORK_CIDR_0 | sed 's|0/28$|0|g')-$(echo $MANAGEMENT_NETWORK_CIDR_0 | sed 's|0/28$|4|g')
+          MANAGEMENT_DNS_0=10.0.0.2
+          MANAGEMENT_GATEWAY_0=$(echo $MANAGEMENT_NETWORK_CIDR_0 | sed 's|0/28$|1|g')
+          MANAGEMENT_AVAILABILITY_ZONES_0=$(cat $TF_DIR/terraform.tfstate | jq -r '.modules[0].outputs.management_subnet_availability_zones.value[0]')
+          MANAGEMENT_IAAS_IDENTIFIER_1=$(cat $TF_DIR/terraform.tfstate | jq -r '.modules[0].outputs.management_subnet_ids.value[1]')
+          MANAGEMENT_NETWORK_CIDR_1=$(cat $TF_DIR/terraform.tfstate | jq -r '.modules[0].outputs.management_subnet_cidrs.value[1]')
+          MANAGEMENT_RESERVED_IP_RANGES_1=$(echo $MANAGEMENT_NETWORK_CIDR_1 | sed 's|16/28$|16|g')-$(echo $MANAGEMENT_NETWORK_CIDR_1 | sed 's|16/28$|20|g')
+          MANAGEMENT_DNS_1=10.0.0.2
+          MANAGEMENT_GATEWAY_1=$(echo $MANAGEMENT_NETWORK_CIDR_1 | sed 's|16/28$|17|g')
+          MANAGEMENT_AVAILABILITY_ZONES_1=$(cat $TF_DIR/terraform.tfstate | jq -r '.modules[0].outputs.management_subnet_availability_zones.value[1]')
+          MANAGEMENT_IAAS_IDENTIFIER_2=$(cat $TF_DIR/terraform.tfstate | jq -r '.modules[0].outputs.management_subnet_ids.value[2]')
+          MANAGEMENT_NETWORK_CIDR_2=$(cat $TF_DIR/terraform.tfstate | jq -r '.modules[0].outputs.management_subnet_cidrs.value[2]')
+          MANAGEMENT_RESERVED_IP_RANGES_2=$(echo $MANAGEMENT_NETWORK_CIDR_2 | sed 's|32/28$|32|g')-$(echo $MANAGEMENT_NETWORK_CIDR_2 | sed 's|32/28$|36|g')
+          MANAGEMENT_DNS_2=10.0.0.2
+          MANAGEMENT_GATEWAY_2=$(echo $MANAGEMENT_NETWORK_CIDR_2 | sed 's|32/28$|33|g')
+          MANAGEMENT_AVAILABILITY_ZONES_2=$(cat $TF_DIR/terraform.tfstate | jq -r '.modules[0].outputs.management_subnet_availability_zones.value[2]')
+          DEPLOYMENT_NETWORK_NAME=deployment
+          DEPLOYMENT_IAAS_IDENTIFIER_0=$(cat $TF_DIR/terraform.tfstate | jq -r '.modules[0].outputs.pas_subnet_ids.value[0]')
+          DEPLOYMENT_NETWORK_CIDR_0=$(cat $TF_DIR/terraform.tfstate | jq -r '.modules[0].outputs.pas_subnet_cidrs.value[0]')
+          DEPLOYMENT_RESERVED_IP_RANGES_0=$(echo $DEPLOYMENT_NETWORK_CIDR_0 | sed 's|0/24$|0|g')-$(echo $DEPLOYMENT_NETWORK_CIDR_0 | sed 's|0/24$|4|g')
+          DEPLOYMENT_DNS_0=10.0.0.2
+          DEPLOYMENT_GATEWAY_0=$(echo $DEPLOYMENT_NETWORK_CIDR_0 | sed 's|0/24$|1|g')
+          DEPLOYMENT_AVAILABILITY_ZONES_0=$(cat $TF_DIR/terraform.tfstate | jq -r '.modules[0].outputs.pas_subnet_availability_zones.value[0]')
+          DEPLOYMENT_IAAS_IDENTIFIER_1=$(cat $TF_DIR/terraform.tfstate | jq -r '.modules[0].outputs.pas_subnet_ids.value[1]')
+          DEPLOYMENT_NETWORK_CIDR_1=$(cat $TF_DIR/terraform.tfstate | jq -r '.modules[0].outputs.pas_subnet_cidrs.value[1]')
+          DEPLOYMENT_RESERVED_IP_RANGES_1=$(echo $DEPLOYMENT_NETWORK_CIDR_1 | sed 's|0/24$|0|g')-$(echo $DEPLOYMENT_NETWORK_CIDR_1 | sed 's|0/24$|4|g')
+          DEPLOYMENT_DNS_1=10.0.0.2
+          DEPLOYMENT_GATEWAY_1=$(echo $DEPLOYMENT_NETWORK_CIDR_1 | sed 's|0/24$|1|g')
+          DEPLOYMENT_AVAILABILITY_ZONES_1=$(cat $TF_DIR/terraform.tfstate | jq -r '.modules[0].outputs.pas_subnet_availability_zones.value[1]')
+          DEPLOYMENT_IAAS_IDENTIFIER_2=$(cat $TF_DIR/terraform.tfstate | jq -r '.modules[0].outputs.pas_subnet_ids.value[2]')
+          DEPLOYMENT_NETWORK_CIDR_2=$(cat $TF_DIR/terraform.tfstate | jq -r '.modules[0].outputs.pas_subnet_cidrs.value[2]')
+          DEPLOYMENT_RESERVED_IP_RANGES_2=$(echo $DEPLOYMENT_NETWORK_CIDR_2 | sed 's|0/24$|0|g')-$(echo $DEPLOYMENT_NETWORK_CIDR_2 | sed 's|0/24$|4|g')
+          DEPLOYMENT_DNS_2=10.0.0.2
+          DEPLOYMENT_GATEWAY_2=$(echo $DEPLOYMENT_NETWORK_CIDR_2 | sed 's|0/24$|1|g')
+          DEPLOYMENT_AVAILABILITY_ZONES_2=$(cat $TF_DIR/terraform.tfstate | jq -r '.modules[0].outputs.pas_subnet_availability_zones.value[2]')
+          SERVICES_NETWORK_NAME=services
+          SERVICES_IAAS_IDENTIFIER_0=$(cat $TF_DIR/terraform.tfstate | jq -r '.modules[0].outputs.services_subnet_ids.value[0]')
+          SERVICES_NETWORK_CIDR_0=$(cat $TF_DIR/terraform.tfstate | jq -r '.modules[0].outputs.services_subnet_cidrs.value[0]')
+          SERVICES_RESERVED_IP_RANGES_0=$(echo $SERVICES_NETWORK_CIDR_0 | sed 's|0/24$|0|g')-$(echo $SERVICES_NETWORK_CIDR_0 | sed 's|0/24$|3|g')
+          SERVICES_DNS_0=10.0.0.2
+          SERVICES_GATEWAY_0=$(echo $SERVICES_NETWORK_CIDR_0 | sed 's|0/24$|1|g')
+          SERVICES_AVAILABILITY_ZONES_0=$(cat $TF_DIR/terraform.tfstate | jq -r '.modules[0].outputs.services_subnet_availability_zones.value[0]')
+          SERVICES_IAAS_IDENTIFIER_1=$(cat $TF_DIR/terraform.tfstate | jq -r '.modules[0].outputs.services_subnet_ids.value[1]')
+          SERVICES_NETWORK_CIDR_1=$(cat $TF_DIR/terraform.tfstate | jq -r '.modules[0].outputs.services_subnet_cidrs.value[1]')
+          SERVICES_RESERVED_IP_RANGES_1=$(echo $SERVICES_NETWORK_CIDR_1 | sed 's|0/24$|0|g')-$(echo $SERVICES_NETWORK_CIDR_1 | sed 's|0/24$|3|g')
+          SERVICES_DNS_1=10.0.0.2
+          SERVICES_GATEWAY_1=$(echo $SERVICES_NETWORK_CIDR_1 | sed 's|0/24$|1|g')
+          SERVICES_AVAILABILITY_ZONES_1=$(cat $TF_DIR/terraform.tfstate | jq -r '.modules[0].outputs.services_subnet_availability_zones.value[1]')
+          SERVICES_IAAS_IDENTIFIER_2=$(cat $TF_DIR/terraform.tfstate | jq -r '.modules[0].outputs.services_subnet_ids.value[2]')
+          SERVICES_NETWORK_CIDR_2=$(cat $TF_DIR/terraform.tfstate | jq -r '.modules[0].outputs.services_subnet_cidrs.value[2]')
+          SERVICES_RESERVED_IP_RANGES_2=$(echo $SERVICES_NETWORK_CIDR_2 | sed 's|0/24$|0|g')-$(echo $SERVICES_NETWORK_CIDR_2 | sed 's|0/24$|3|g')
+          SERVICES_DNS_2=10.0.0.2
+          SERVICES_GATEWAY_2=$(echo $SERVICES_NETWORK_CIDR_2 | sed 's|0/24$|1|g')
+          SERVICES_AVAILABILITY_ZONES_2=$(cat $TF_DIR/terraform.tfstate | jq -r '.modules[0].outputs.services_subnet_availability_zones.value[2]')
+          SINGLETON_AVAILABILITY_NETWORK=$MANAGEMENT_NETWORK_NAME
+          SINGLETON_AVAILABILITY_ZONE=$(cat $TF_DIR/terraform.tfstate | jq -r '.modules[0].outputs.azs.value[0]')
+
+          cat <<EOF > /tmp/director.yml
+          ---
+          iaas-configuration:
+            access_key_id: $ACCESS_KEY_ID
+            secret_access_key: $SECRET_ACCESS_KEY
+            security_group: $SECURITY_GROUP
+            key_pair_name: $KEY_PAIR_NAME
+            ssh_private_key: |
+          $SSH_PRIVATE_KEY
+            region: $REGION
+          director-configuration:
+            ntp_servers_string: 0.amazon.pool.ntp.org,1.amazon.pool.ntp.org,2.amazon.pool.ntp.org,3.amazon.pool.ntp.org
+            resurrector_enabled: true
+            post_deploy_enabled: true
+            database_type: internal
+            blobstore_type: s3
+            s3_blobstore_options:
+              endpoint: https://s3-${REGION}.amazonaws.com
+              bucket_name: $OPS_MANAGER_BUCKET
+              access_key: $ACCESS_KEY_ID
+              secret_key: $SECRET_ACCESS_KEY
+              signature_version: "4"
+              region: $REGION
+          az-configuration: $AVAILABILITY_ZONES
+          networks-configuration:
+            icmp_checks_enabled: false
+            networks:
+            - name: $MANAGEMENT_NETWORK_NAME
+              service_network: false
+              subnets:
+              - iaas_identifier: $MANAGEMENT_IAAS_IDENTIFIER_0
+                cidr: $MANAGEMENT_NETWORK_CIDR_0
+                reserved_ip_ranges: $MANAGEMENT_RESERVED_IP_RANGES_0
+                dns: $MANAGEMENT_DNS_0
+                gateway: $MANAGEMENT_GATEWAY_0
+                availability_zone_names: 
+                - $MANAGEMENT_AVAILABILITY_ZONES_0
+              - iaas_identifier: $MANAGEMENT_IAAS_IDENTIFIER_1
+                cidr: $MANAGEMENT_NETWORK_CIDR_1
+                reserved_ip_ranges: $MANAGEMENT_RESERVED_IP_RANGES_1
+                dns: $MANAGEMENT_DNS_1
+                gateway: $MANAGEMENT_GATEWAY_1
+                availability_zone_names: 
+                - $MANAGEMENT_AVAILABILITY_ZONES_1
+              - iaas_identifier: $MANAGEMENT_IAAS_IDENTIFIER_2
+                cidr: $MANAGEMENT_NETWORK_CIDR_2
+                reserved_ip_ranges: $MANAGEMENT_RESERVED_IP_RANGES_2
+                dns: $MANAGEMENT_DNS_2
+                gateway: $MANAGEMENT_GATEWAY_2
+                availability_zone_names: 
+                - $MANAGEMENT_AVAILABILITY_ZONES_2
+            - name: $DEPLOYMENT_NETWORK_NAME
+              service_network: false
+              subnets:
+              - iaas_identifier: $DEPLOYMENT_IAAS_IDENTIFIER_0
+                cidr: $DEPLOYMENT_NETWORK_CIDR_0
+                reserved_ip_ranges: $DEPLOYMENT_RESERVED_IP_RANGES_0
+                dns: $DEPLOYMENT_DNS_0
+                gateway: $DEPLOYMENT_GATEWAY_0
+                availability_zone_names:
+                - $DEPLOYMENT_AVAILABILITY_ZONES_0
+              - iaas_identifier: $DEPLOYMENT_IAAS_IDENTIFIER_1
+                cidr: $DEPLOYMENT_NETWORK_CIDR_1
+                reserved_ip_ranges: $DEPLOYMENT_RESERVED_IP_RANGES_1
+                dns: $DEPLOYMENT_DNS_1
+                gateway: $DEPLOYMENT_GATEWAY_1
+                availability_zone_names:
+                - $DEPLOYMENT_AVAILABILITY_ZONES_1
+              - iaas_identifier: $DEPLOYMENT_IAAS_IDENTIFIER_2
+                cidr: $DEPLOYMENT_NETWORK_CIDR_2
+                reserved_ip_ranges: $DEPLOYMENT_RESERVED_IP_RANGES_2
+                dns: $DEPLOYMENT_DNS_2
+                gateway: $DEPLOYMENT_GATEWAY_2
+                availability_zone_names:
+                - $DEPLOYMENT_AVAILABILITY_ZONES_2
+            - name: $SERVICES_NETWORK_NAME
+              service_network: true
+              subnets:
+              - iaas_identifier: $SERVICES_IAAS_IDENTIFIER_0
+                cidr: $SERVICES_NETWORK_CIDR_0
+                reserved_ip_ranges: $SERVICES_RESERVED_IP_RANGES_0
+                dns: $SERVICES_DNS_0
+                gateway: $SERVICES_GATEWAY_0
+                availability_zone_names:
+                - $SERVICES_AVAILABILITY_ZONES_0
+              - iaas_identifier: $SERVICES_IAAS_IDENTIFIER_1
+                cidr: $SERVICES_NETWORK_CIDR_1
+                reserved_ip_ranges: $SERVICES_RESERVED_IP_RANGES_1
+                dns: $SERVICES_DNS_1
+                gateway: $SERVICES_GATEWAY_1
+                availability_zone_names:
+                - $SERVICES_AVAILABILITY_ZONES_1
+              - iaas_identifier: $SERVICES_IAAS_IDENTIFIER_2
+                cidr: $SERVICES_NETWORK_CIDR_2
+                reserved_ip_ranges: $SERVICES_RESERVED_IP_RANGES_2
+                dns: $SERVICES_DNS_2
+                gateway: $SERVICES_GATEWAY_2
+                availability_zone_names:
+                - $SERVICES_AVAILABILITY_ZONES_2
+          network-assignment:
+            network:
+              name: $SINGLETON_AVAILABILITY_NETWORK
+            singleton_availability_zone:
+              name: $SINGLETON_AVAILABILITY_ZONE
+          security-configuration:
+            vm_password_type: generate
+          resource-configuration:
+            director:
+              instance_type:
+                id: automatic
+            compilation:
+              instance_type:
+                id: automatic
+          EOF
+
+          cat /tmp/director.yml
+
+          om --target https://$OPSMAN_DOMAIN_OR_IP_ADDRESS \
+            --skip-ssl-validation \
+            --username "$OPS_MGR_USR" \
+            --password "$OPS_MGR_PWD" \
+            configure-director \
+            --config /tmp/director.yml
+- name: upload-pas
+  build_logs_to_retain: 5
+  serial_groups: [terraform]
+  plan:
+  - aggregate:
+    - get: terraform-state
+      passed:
+      - config-director
+      trigger: true
+    - get: pcf-pipelines
+    - get: pivnet-product
+      resource: pas
+      params:
+        globs:
+        - "cf-*.pivotal"
+  - task: upload-tile
+    params:
+      OPSMAN_CLIENT_ID: ""
+      OPSMAN_CLIENT_SECRET: ""
+      OPS_MGR_USR: ((ops_mgr_usr))
+      OPS_MGR_PWD: ((ops_mgr_pwd))
+      PIVNET_API_TOKEN: ((pivnet_api_token))
+      NO_PROXY: ""
+      OM_IP: ""
+      IAAS: azure
+    config:
+      platform: linux
+      image_resource:
+        type: docker-image
+        source:
+          repository: pcfnorm/rootfs
+          tag: 1.0.19
+      inputs:
+      - name: terraform-state
+      - name: pcf-pipelines
+      - name: pivnet-product
+      run:
+        path: bash
+        args: 
+        - -c
+        - |
+          set -euo pipefail
+          export OPSMAN_DOMAIN_OR_IP_ADDRESS=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.ops_manager_dns.value')
+          ./pcf-pipelines/tasks/upload-product-and-stemcell/task.sh
+  - task: stage-tile
+    params:
+      OPSMAN_CLIENT_ID: ""
+      OPSMAN_CLIENT_SECRET: ""
+      OPSMAN_USERNAME: ((ops_mgr_usr))
+      OPSMAN_PASSWORD: ((ops_mgr_pwd))
+    config:
+      platform: linux
+      image_resource:
+        type: docker-image
+        source:
+          repository: pcfnorm/rootfs
+          tag: 1.0.19
+      inputs:
+      - name: terraform-state
+      - name: pcf-pipelines
+      - name: pivnet-product
+      run:
+        path: bash
+        args: 
+        - -c
+        - |
+          set -euo pipefail
+          export OPSMAN_DOMAIN_OR_IP_ADDRESS=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.ops_manager_dns.value')
+          set +e
+          ./pcf-pipelines/tasks/stage-product/task.sh
+          echo "ok anyway"
+
+- name: config-pas
+  build_logs_to_retain: 5
+  plan:
+  - aggregate:
+    - get: terraform-state
+      passed:
+      - upload-pas
+      - add-vm-extensions
+      trigger: true
+    - get: pcf-pipelines
+    - get: pas
+      passed:
+      - upload-pas
+      params:
+        globs: 
+        - "cf-cli-*"
+      trigger: true
+  - task: config-pas
+    params:
+      OPS_MGR_USR: ((ops_mgr_usr))
+      OPS_MGR_PWD: ((ops_mgr_pwd))
+      OPSMAN_CLIENT_ID: ""
+      OPSMAN_CLIENT_SECRET: ""
+      SMTP_FROM: ((smtp_from))
+      SMTP_ADDRESS: ((smtp_address)) 
+      SMTP_PORT: ((smtp_port))
+      SMTP_USERNAME: ((smtp_username))
+      SMTP_PASSWORD: ((smtp_password))
+      SMTP_ENABLE_STARTTLS: ((smtp_enable_starttls))
+      PRODUCT_NAME: "cf"
+    config:
+      platform: linux
+      image_resource:
+        type: docker-image
+        source:
+          repository: pcfnorm/rootfs
+          tag: 1.0.19
+      inputs:
+      - name: terraform-state
+      - name: pcf-pipelines
+      - name: pas
+      run:
+        path: bash
+        args: 
+        - -c
+        - |
+          set -eo pipefail 
+          cp /usr/local/bin/om-linux /usr/local/bin/om
+          cp terraform-state/terraform.tfstate ./
+          
+          OPSMAN_DOMAIN_OR_IP_ADDRESS=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.ops_manager_dns.value')
+
+          source pcf-pipelines/functions/generate_cert.sh
+          SINGLETON_AVAILABILITY_ZONE=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.azs.value[0]')
+          AVAILABILITY_ZONES=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.azs.value | map({name: .})' | tr -d '\n' | tr -d '"')
+          AVAILABILITY_ZONE_NAMES=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.azs.value' | tr -d '\n' | tr -d '"')
+          SYSTEM_DOMAIN=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.sys_domain.value')
+          APPS_DOMAIN=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.apps_domain.value')
+          CERTIFICATES=$(generate_cert "*.$APPS_DOMAIN *.$SYSTEM_DOMAIN *.uaa.$SYSTEM_DOMAIN *.login.$SYSTEM_DOMAIN")
+          PAS_CERT_PEM=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.ssl_cert.value' | sed 's/^/          /')
+          PAS_PRIVATE_KEY_PEM=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.ssl_private_key.value' | sed 's/^/          /')
+          SAML_CERT_PEM=$PAS_CERT_PEM
+          SAML_PRIVATE_KEY_PEM=$PAS_PRIVATE_KEY_PEM
+          WEB_LB_NAME=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.web_lb_name.value')
+          SSH_LB_NAME=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.diego_ssh_lb_name.value')
+          MYSQL_LB_NAME=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.mysql_lb_name.value')
+          TCP_LB_NAME=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.tcp_lb_name.value')
+          ACCESS_KEY_ID=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.ops_manager_iam_user_access_key.value')
+          SECRET_ACCESS_KEY=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.ops_manager_iam_user_secret_key.value')
+          S3_ENDPOINT=https://s3.$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.region.value').amazonaws.com
+          S3_REGION=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.region.value')
+          PAS_BUILDPACKS_BUCKET=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.pas_buildpacks_bucket.value')
+          PAS_DROPLETS_BUCKET=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.pas_droplets_bucket.value')
+          PAS_PACKAGES_BUCKET=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.pas_packages_bucket.value')
+          PAS_RESOURCES_BUCKET=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.pas_resources_bucket.value')
+          RDS_ADDRESS=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.rds_address.value')
+          RDS_PORT=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.rds_port.value')
+          RDS_USERNAME=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.rds_username.value')
+          RDS_PASSWORD=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.rds_password.value')
+         
+          curl -L -J -O https://s3.amazonaws.com/rds-downloads/rds-ca-2015-$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.region.value').pem
+          curl -L -J -O https://s3.amazonaws.com/rds-downloads/rds-ca-2015-root.pem
+          cat rds-ca-2015-ap-northeast-1.pem rds-ca-2015-root.pem > combined.pem
+          RDS_CA=$(cat combined.pem | sed 's/^/          /')
+
+          cat <<EOF > config.yml
+          ---
+          product-properties:
+            .cloud_controller.system_domain:
+              value: $SYSTEM_DOMAIN
+            .cloud_controller.apps_domain:
+              value: $APPS_DOMAIN
+            .properties.routing_tls_termination:
+              value: router
+            .properties.haproxy_forward_tls:
+              value: disable
+            .properties.networking_poe_ssl_certs:
+              value:
+              - name: pas-wildcard
+                certificate:
+                  cert_pem: |
+          $PAS_CERT_PEM
+                  private_key_pem: |
+          $PAS_PRIVATE_KEY_PEM
+            .properties.logger_endpoint_port:
+              value: 4443
+            .properties.security_acknowledgement:
+              value: X
+            .properties.secure_service_instance_credentials:
+              value: true
+            .properties.cf_networking_enable_space_developer_self_service:
+              value: true
+            .properties.enable_service_discovery_for_apps:
+              value: true
+            .uaa.service_provider_key_credentials:
+              value:
+                cert_pem: |
+          $SAML_CERT_PEM
+                private_key_pem: |
+          $SAML_PRIVATE_KEY_PEM
+            .properties.credhub_key_encryption_passwords:
+              value: 
+              - name: key1
+                key: 
+                  secret: credhubsecret1credhubsecret1
+                primary: true
+            .mysql_monitor.recipient_email:
+              value: notify@example.com
+            .properties.system_database:
+              value: external
+            .properties.system_database.external.host:
+              value: $RDS_ADDRESS
+            .properties.system_database.external.port:
+              value: $RDS_PORT
+            .properties.system_database.external.app_usage_service_username:
+              value: $RDS_USERNAME
+            .properties.system_database.external.app_usage_service_password:
+              value: 
+                secret: $RDS_PASSWORD
+            .properties.system_database.external.autoscale_username:
+              value: $RDS_USERNAME
+            .properties.system_database.external.autoscale_password:
+              value: 
+                secret: $RDS_PASSWORD
+            .properties.system_database.external.ccdb_username:
+              value: $RDS_USERNAME
+            .properties.system_database.external.ccdb_password:
+              value: 
+                secret: $RDS_PASSWORD 
+            .properties.system_database.external.diego_username:
+              value: $RDS_USERNAME
+            .properties.system_database.external.diego_password:
+              value: 
+                secret: $RDS_PASSWORD
+            .properties.system_database.external.locket_username:
+              value: $RDS_USERNAME
+            .properties.system_database.external.locket_password:
+              value: 
+                secret: $RDS_PASSWORD
+            .properties.system_database.external.networkpolicyserver_username:
+              value: $RDS_USERNAME
+            .properties.system_database.external.networkpolicyserver_password:
+              value: 
+                secret: $RDS_PASSWORD 
+            .properties.system_database.external.nfsvolume_username:
+              value: $RDS_USERNAME
+            .properties.system_database.external.nfsvolume_password:
+              value: 
+                secret: $RDS_PASSWORD 
+            .properties.system_database.external.notifications_username:
+              value: $RDS_USERNAME
+            .properties.system_database.external.notifications_password:
+              value: 
+                secret: $RDS_PASSWORD 
+            .properties.system_database.external.account_username:
+              value: $RDS_USERNAME
+            .properties.system_database.external.account_password:
+              value: 
+                secret: $RDS_PASSWORD 
+            .properties.system_database.external.routing_username:
+              value: $RDS_USERNAME
+            .properties.system_database.external.routing_password:
+              value: 
+                secret: $RDS_PASSWORD 
+            .properties.system_database.external.silk_username:
+              value: $RDS_USERNAME
+            .properties.system_database.external.silk_password:
+              value: 
+                secret: $RDS_PASSWORD
+            .properties.uaa_database:
+              value: external
+            .properties.uaa_database.external.host:
+              value: $RDS_ADDRESS
+            .properties.uaa_database.external.port:
+              value: $RDS_PORT
+            .properties.uaa_database.external.uaa_username:
+              value: $RDS_USERNAME
+            .properties.uaa_database.external.uaa_password:
+              value: 
+                secret: $RDS_PASSWORD
+            .properties.credhub_database:
+              value: external
+            .properties.credhub_database.external.host:
+              value: $RDS_ADDRESS
+            .properties.credhub_database.external.port:
+              value: $RDS_PORT
+            .properties.credhub_database.external.username:
+              value: $RDS_USERNAME
+            .properties.credhub_database.external.password:
+              value: 
+                secret: $RDS_PASSWORD
+            .properties.credhub_database.external.tls_ca:
+              value:  |
+          $RDS_CA
+            .properties.system_blobstore:
+              value: external
+            .properties.system_blobstore.external.endpoint:
+              value: $S3_ENDPOINT
+            .properties.system_blobstore.external.access_key:
+              value: $ACCESS_KEY_ID
+            .properties.system_blobstore.external.secret_key:
+              value: 
+                secret: "$SECRET_ACCESS_KEY"
+            .properties.system_blobstore.external.signature_version:
+              value: 4
+            .properties.system_blobstore.external.region:
+              value: $S3_REGION
+            .properties.system_blobstore.external.buildpacks_bucket:
+              value: $PAS_BUILDPACKS_BUCKET
+            .properties.system_blobstore.external.droplets_bucket:
+              value: $PAS_DROPLETS_BUCKET
+            .properties.system_blobstore.external.packages_bucket:
+              value: $PAS_PACKAGES_BUCKET
+            .properties.system_blobstore.external.resources_bucket:
+              value: $PAS_RESOURCES_BUCKET
+            .properties.autoscale_instance_count:
+              value: 1
+            .properties.smtp_from:
+              value: $SMTP_FROM
+            .properties.smtp_address:
+              value: $SMTP_ADDRESS
+            .properties.smtp_port:
+              value: $SMTP_PORT
+            .properties.smtp_credentials:
+              value:
+                identity: $SMTP_USERNAME
+                password: $SMTP_PASSWORD
+            .properties.smtp_enable_starttls_auto:
+              value: $SMTP_ENABLE_STARTTLS
+          network-properties:
+            network:
+              name: deployment
+            service_network:
+              name: services
+            other_availability_zones: $AVAILABILITY_ZONES
+            singleton_availability_zone:
+              name: $SINGLETON_AVAILABILITY_ZONE
+          resource-config:
+            consul_server:
+              instances: 1
+              instance_type:
+                id: t2.micro
+              additional_vm_extensions:
+              - spot-instance-t2.micro
+              - standard-disk
+            nats:
+              instances: 1
+              instance_type:
+                id: t2.micro
+              additional_vm_extensions:
+              - spot-instance-t2.micro
+              - standard-disk
+            mysql_proxy:
+              instances: 0
+              instance_type:
+                id: t2.micro
+              additional_vm_extensions:
+              - spot-instance-t2.micro
+              - standard-disk
+            mysql:
+              instances: 0
+              instance_type:
+                id: m4.large
+              additional_vm_extensions:
+              - spot-instance-m4.large
+              - standard-disk
+            backup-prepare:
+              instances: 0
+              instance_type:
+                id: t2.micro
+              additional_vm_extensions:
+              - spot-instance-t2.micro
+              - standard-disk
+            diego_database:
+              instances: 1
+              instance_type:
+                id: t2.micro
+              additional_vm_extensions:
+              - spot-instance-t2.micro
+              - standard-disk
+            uaa:
+              instances: 1
+              instance_type:
+                id: t2.medium
+              additional_vm_extensions:
+              - spot-instance-t2.medium
+              - standard-disk
+            cloud_controller:
+              instances: 1
+              instance_type:
+                id: t2.medium
+              additional_vm_extensions:
+              - spot-instance-t2.medium
+              - standard-disk
+            ha_proxy:
+              instances: 0
+              instance_type:
+                id: t2.micro
+              additional_vm_extensions:
+              - spot-instance-t2.micro
+              - standard-disk
+            router:
+              instances: 1
+              instance_type:
+                id: t2.micro
+              additional_vm_extensions:
+              - spot-instance-t2.micro
+              - standard-disk
+              elb_names:
+              - $WEB_LB_NAME
+            service-discovery-controller:
+              instances: 1
+              instance_type:
+                id: t2.micro
+              additional_vm_extensions:
+              - spot-instance-t2.micro
+              - standard-disk
+            mysql_monitor:
+              instances: 0
+              instance_type:
+                id: t2.micro
+              additional_vm_extensions:
+              - spot-instance-t2.micro
+              - standard-disk
+            clock_global:
+              instances: 1
+              instance_type:
+                id: t2.medium
+              additional_vm_extensions:
+              - spot-instance-t2.medium
+              - standard-disk
+            cloud_controller_worker:
+              instances: 1
+              instance_type:
+                id: t2.micro
+              additional_vm_extensions:
+              - spot-instance-t2.micro
+              - standard-disk
+            diego_brain:
+              instances: 1
+              instance_type:
+                id: t2.small
+              additional_vm_extensions:
+              - spot-instance-t2.small
+              - standard-disk
+              # elb_names:
+              # - $SSH_LB_NAME
+            diego_cell:
+              instances: 1
+              instance_type:
+                id: r4.xlarge
+              additional_vm_extensions:
+              - spot-instance-r4.xlarge
+              - standard-disk
+            loggregator_trafficcontroller:
+              instances: 1
+              instance_type:
+                id: t2.small
+              additional_vm_extensions:
+              - spot-instance-t2.small
+              - standard-disk
+            syslog_adapter:
+              instances: 1
+              instance_type:
+                id: t2.small
+              additional_vm_extensions:
+              - spot-instance-t2.small
+              - standard-disk
+            syslog_scheduler:
+              instances: 1
+              instance_type:
+                id: t2.small
+              additional_vm_extensions:
+              - spot-instance-t2.small
+              - standard-disk
+            doppler:
+              instances: 1
+              instance_type:
+                id: t2.small
+              additional_vm_extensions:
+              - spot-instance-t2.small
+              - standard-disk
+            tcp_router:
+              instances: 0
+              instance_type:
+                id: t2.small
+              additional_vm_extensions:
+              - spot-instance-t2.small
+              - standard-disk
+              # elb_names:
+              # - $TCP_LB_NAME
+            credhub:
+              instances: 0
+              instance_type:
+                id: m4.large
+              additional_vm_extensions:
+              - spot-instance-m4.large
+              - standard-disk
+          EOF
+
+          cat config.yml
+
+          om --target "https://${OPSMAN_DOMAIN_OR_IP_ADDRESS}" \
+             --username "$OPS_MGR_USR" \
+             --password "$OPS_MGR_PWD" \
+             --skip-ssl-validation \
+             configure-product \
+             --product-name "${PRODUCT_NAME}" \
+             --config config.yml
+
+          # Errands
+          for e in \
+            push-usage-service \
+            push-apps-manager \
+            deploy-notifications \
+            deploy-notifications-ui \
+            push-pivotal-account \
+            deploy-autoscaler \
+            test-autoscaling \
+            nfsbrokerpush \
+            ;do
+            om --target "https://${OPSMAN_DOMAIN_OR_IP_ADDRESS}" \
+             --username "$OPS_MGR_USR" \
+             --password "$OPS_MGR_PWD" \
+             --skip-ssl-validation \
+             set-errand-state \
+             --product-name "${PRODUCT_NAME}" \
+             --errand-name="${e}" \
+             --post-deploy-state=when-changed
+          done
+- name: deploy-pas
+  build_logs_to_retain: 5
+  plan:
+  - aggregate:
+    - get: terraform-state
+      passed:
+      - config-pas
+      - prepare-rds
+      trigger: true
+    - get: pcf-pipelines
+  - task: apply-changes
+    params:
+      OPSMAN_USERNAME: ((ops_mgr_usr))
+      OPSMAN_PASSWORD: ((ops_mgr_pwd))
+      OPSMAN_CLIENT_ID: ""
+      OPSMAN_CLIENT_SECRET: ""
+    config:
+      platform: linux
+      image_resource:
+        type: docker-image
+        source:
+          repository: pcfnorm/rootfs
+          tag: 1.0.19
+      inputs:
+      - name: terraform-state
+      - name: pcf-pipelines
+      run:
+        path: bash
+        args: 
+        - -c
+        - |
+          set -euo pipefail
+          export OPSMAN_DOMAIN_OR_IP_ADDRESS=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.ops_manager_dns.value')          
+          ./pcf-pipelines/tasks/apply-changes/task.sh
+
+- name: wipe-env
+  build_logs_to_retain: 5
+  serial_groups: [terraform]
+  ensure:
+    put: terraform-state
+    params:
+      file: tfstate-output/terraform.tfstate
+  plan:
+  - aggregate:
+    - get: template
+    - get: terraform-state
+      passed:
+      - config-authentication
+    - get: pcf-pipelines
+  - task: delete-installation
+    params:
+      OPS_MGR_USR: ((ops_mgr_usr))
+      OPS_MGR_PWD: ((ops_mgr_pwd))
+    config:
+      platform: linux
+      image_resource:
+        type: docker-image
+        source:
+          repository: pcfnorm/rootfs
+          tag: 1.0.19
+      inputs:
+      - name: terraform-state
+      - name: pcf-pipelines
+      run:
+        path: bash
+        args: 
+        - -c
+        - |
+          set +e  
+          OPSMAN_DOMAIN_OR_IP_ADDRESS=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.ops_manager_dns.value')
+          om-linux \
+            --target https://$OPSMAN_DOMAIN_OR_IP_ADDRESS \
+            --skip-ssl-validation \
+            --username "$OPS_MGR_USR" \
+            --password "$OPS_MGR_PWD" \
+            --request-timeout 60 \
+            delete-installation
+  - task: terraform-destory
+    params:
+      TF_VAR_region: ((aws_region))
+      TF_VAR_access_key: ((aws_access_key_id))
+      TF_VAR_secret_key: ((aws_secret_access_key))
+      TF_VAR_availability_zones: ((availability_zones))
+      TF_VAR_env_name: ((env_name))
+      TF_VAR_dns_suffix: ((dns_suffix))
+      TF_VAR_rds_instance_count: ((rds_instance_count))
+      TF_VAR_rds_instance_class: ((rds_instance_class))
+      TF_VAR_ops_manager_instance_type: ((ops_manager_instance_type))
+      TF_VAR_ssl_cert: ((ssl_cert))
+      TF_VAR_ssl_private_key: ((ssl_private_key))
+    config:
+      platform: linux
+      image_resource:
+        type: docker-image
+        source:
+          repository: hashicorp/terraform
+          tag: full
+      inputs:
+      - name: template
+      - name: terraform-state
+      outputs:
+      - name: tfstate-output
+      run:
+        path: sh
+        args: 
+        - -c
+        - |
+          set -e
+          terraform init \
+                    template
+          terraform destroy \
+                    -force \
+                    -state terraform-state/terraform.tfstate \
+                    -state-out tfstate-output/terraform.tfstate \
+                    template
+
+# - name: show-cf-login-as-admin
+#   build_logs_to_retain: 5
+#   plan:
+#   - aggregate:
+#     - get: terraform-state
+#       passed:
+#       - config-pas
+#       # - deploy-pas
+#   - task: show-cf-login-as-admin
+#     params:
+#       PIVNET_API_TOKEN: ((pivnet_api_token))
+#       OPS_MGR_USR: ((ops_mgr_usr))
+#       OPS_MGR_PWD: ((ops_mgr_pwd))
+#       CLOUDFLARE_API_KEY: ((cloudflare_api_key))
+#     config:
+#       platform: linux
+#       image_resource:
+#         type: docker-image
+#         source:
+#           repository: pcfnorm/rootfs
+#           tag: 1.0.19
+#       inputs:
+#       - name: terraform-state
+#       run:
+#         path: bash
+#         args: 
+#         - -c
+#         - |
+#           set -eo pipefail 
+#           cp /usr/local/bin/om-linux /usr/local/bin/om
+#           cp terraform-state/terraform.tfstate ./
+#           OPSMAN_DOMAIN_OR_IP_ADDRESS=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.ops_manager_dns.value')
+#           SYSTEM_DOMAIN=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.sys_domain.value')
+
+          
+#           PRODUCT_GUID=$(om \
+#                 --target "https://${OPSMAN_DOMAIN_OR_IP_ADDRESS}" \
+#                 --username "$OPS_MGR_USR" \
+#                 --password "$OPS_MGR_PWD" \
+#                 --skip-ssl-validation \
+#                 curl \
+#                 --silent \
+#                 --path "/api/v0/staged/products" \
+#                 -x GET \
+#                 | jq -r '.[] | select(.type == "cf") | .guid')
+#           ADMIN_CREDENTIALS=$(om \
+#                 --target "https://${OPSMAN_DOMAIN_OR_IP_ADDRESS}" \
+#                 --username "$OPS_MGR_USR" \
+#                 --password "$OPS_MGR_PWD" \
+#                 --skip-ssl-validation \
+#                 curl \
+#                 --silent \
+#                 --path "/api/v0/deployed/products/${PRODUCT_GUID}/credentials/.uaa.admin_credentials" \
+#                 -x GET \
+#                 | jq -r '.credential.value.password')
+
+#           cat <<EOF
+#           cf login --skip-ssl-validation -a api.${SYSTEM_DOMAIN} -u admin -p ${ADMIN_CREDENTIALS} 
+#           EOF
