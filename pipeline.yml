@@ -255,11 +255,11 @@ jobs:
           #TCP_LB_IP=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].resources["tcp_elb.web_elb"].primary.attributes.dns_name')
 
           RECORDS=""
-          RECORDS="${RECORDS} ${OPSMAN_DOMAIN},${OPSMAN_DOMAIN_OR_IP_ADDRESS}"
-          RECORDS="${RECORDS} *.${SYSTEM_DOMAIN},${WEB_LB_IP}"
-          #RECORDS="${RECORDS} ssh.${SYSTEM_DOMAIN},${SSH_LB_IP}"
-          RECORDS="${RECORDS} *.${APPS_DOMAIN},${WEB_LB_IP}"
-          #RECORDS="${RECORDS} ${TCP_DOMAIN},${TCP_LB_IP}"
+          RECORDS="${RECORDS} ${OPSMAN_DOMAIN},${OPSMAN_DOMAIN_OR_IP_ADDRESS},A"
+          RECORDS="${RECORDS} *.${SYSTEM_DOMAIN},${WEB_LB_IP},CNAME"
+          #RECORDS="${RECORDS} ssh.${SYSTEM_DOMAIN},${SSH_LB_IP},CNAME"
+          RECORDS="${RECORDS} *.${APPS_DOMAIN},${WEB_LB_IP},CNAME"
+          #RECORDS="${RECORDS} ${TCP_DOMAIN},${TCP_LB_IP},CNAME"
 
           if [ "${CLOUDFLARE_API_KEY}" = "" ];then
             echo "CLOUDFLARE_API_KEY is not set."
@@ -275,7 +275,8 @@ jobs:
           for r in ${RECORDS};do
               HOSTNAME=`echo $r | awk -F ',' '{print $1}'`
               EXTERNAL_IP=`echo $r | awk -F ',' '{print $2}'`
-              echo "$HOSTNAME  $EXTERNAL_IP"
+              TYPE=`echo $r | awk -F ',' '{print $3}'`
+              echo "$TYPE  $HOSTNAME  $EXTERNAL_IP"
               RECORD=`echo $DNS_RECORDS | jq -r ". | map(select(.name == \"$HOSTNAME\"))[0]"`
               if [ "$RECORD" != "null" ];then
                 RECORD_ID=`echo $RECORD | jq -r ".id"`
@@ -286,12 +287,12 @@ jobs:
                      -H "Content-Type: application/json" \
                      -w '\n'
               fi
-              echo "Creating an A record"
+              echo "Creating a $TYPE record"
               curl -X POST "https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}/dns_records" \
                    -H "X-Auth-Email: ${CLOUDFLARE_EMAIL}" \
                    -H "X-Auth-Key: ${CLOUDFLARE_API_KEY}" \
                    -H "Content-Type: application/json" \
-                   -d "{\"type\": \"A\", \"name\": \"$HOSTNAME\", \"content\": \"$EXTERNAL_IP\", \"proxied\": false, \"ttl\": 120}" \
+                   -d "{\"type\": \"$TYPE\", \"name\": \"$HOSTNAME\", \"content\": \"$EXTERNAL_IP\", \"proxied\": false, \"ttl\": 120}" \
                    -w '\n'
           done
 
@@ -485,13 +486,37 @@ jobs:
              --cloud-properties '{"spot_bid_price":"'$PRICE'", "spot_ondemand_fallback": true}'
           done
 
+
+          EPHEMERAL_DISK=""
+          EPHEMERAL_DISK="$EPHEMERAL_DISK 1024,1GB"
+          EPHEMERAL_DISK="$EPHEMERAL_DISK 5120,5GB"
+          EPHEMERAL_DISK="$EPHEMERAL_DISK 10240,10GB"
+          EPHEMERAL_DISK="$EPHEMERAL_DISK 20240,20GB"
+          EPHEMERAL_DISK="$EPHEMERAL_DISK 30720,32GB"
+          EPHEMERAL_DISK="$EPHEMERAL_DISK 51200,50GB"
+          EPHEMERAL_DISK="$EPHEMERAL_DISK 102400,100GB"
+          EPHEMERAL_DISK="$EPHEMERAL_DISK 204800,200GB"
+          
+          for disk in ${EPHEMERAL_DISK};do
+            DISK_SIZE=`echo $disk | awk -F ',' '{print $1}'`
+            DISK_NAME=`echo $disk | awk -F ',' '{print $2}'`
+            echo "$DISK_NAME=$DISK_SIZE"
+            om --target "https://${OPSMAN_DOMAIN_OR_IP_ADDRESS}" \
+             --skip-ssl-validation \
+             --username "${OPS_MGR_USR}" \
+             --password "${OPS_MGR_PWD}" \
+             create-vm-extension \
+             --name ${DISK_NAME}_ephemeral_disk \
+             --cloud-properties '{"ephemeral_disk": {"size": '$DISK_SIZE'}}'
+          done
+
           om --target "https://${OPSMAN_DOMAIN_OR_IP_ADDRESS}" \
              --skip-ssl-validation \
              --username "${OPS_MGR_USR}" \
              --password "${OPS_MGR_PWD}" \
              create-vm-extension \
              --name standard-disk \
-             --cloud-properties '{"root_disk": {"type": "standard"}, "ephemeral_disk": {"type": "standard"}}'
+             --cloud-properties '{"root_disk": {"type": "standard","size": 8192}, "ephemeral_disk": {"type": "standard"}}'
           echo "ok anyway"
 
 - name: prepare-rds
@@ -945,6 +970,8 @@ jobs:
               value: router
             .properties.haproxy_forward_tls:
               value: disable
+            .ha_proxy.skip_cert_verify:
+              value: true
             .properties.networking_poe_ssl_certs:
               value:
               - name: pas-wildcard
@@ -1135,6 +1162,7 @@ jobs:
               additional_vm_extensions:
               - spot-instance-m4.large
               - standard-disk
+              - 32GB_ephemeral_disk
             backup-prepare:
               instances: 0
               instance_type:
@@ -1156,6 +1184,7 @@ jobs:
               additional_vm_extensions:
               - spot-instance-t2.medium
               - standard-disk
+              - 32GB_ephemeral_disk
             cloud_controller:
               instances: 1
               instance_type:
@@ -1163,6 +1192,7 @@ jobs:
               additional_vm_extensions:
               - spot-instance-t2.medium
               - standard-disk
+              - 32GB_ephemeral_disk
             ha_proxy:
               instances: 0
               instance_type:
@@ -1200,6 +1230,7 @@ jobs:
               additional_vm_extensions:
               - spot-instance-t2.medium
               - standard-disk
+              - 32GB_ephemeral_disk
             cloud_controller_worker:
               instances: 1
               instance_type:
@@ -1223,6 +1254,7 @@ jobs:
               additional_vm_extensions:
               - spot-instance-r4.xlarge
               - standard-disk
+              - 100GB_ephemeral_disk
             loggregator_trafficcontroller:
               instances: 1
               instance_type:
@@ -1267,6 +1299,7 @@ jobs:
               additional_vm_extensions:
               - spot-instance-m4.large
               - standard-disk
+              - 32GB_ephemeral_disk
           EOF
 
           cat config.yml
@@ -1288,7 +1321,6 @@ jobs:
             push-pivotal-account \
             deploy-autoscaler \
             test-autoscaling \
-            nfsbrokerpush \
             ;do
             om --target "https://${OPSMAN_DOMAIN_OR_IP_ADDRESS}" \
              --username "$OPS_MGR_USR" \
@@ -1299,6 +1331,15 @@ jobs:
              --errand-name="${e}" \
              --post-deploy-state=when-changed
           done
+
+          om --target "https://${OPSMAN_DOMAIN_OR_IP_ADDRESS}" \
+           --username "$OPS_MGR_USR" \
+           --password "$OPS_MGR_PWD" \
+           --skip-ssl-validation \
+           set-errand-state \
+           --product-name "${PRODUCT_NAME}" \
+           --errand-name=nfsbrokerpush \
+           --post-deploy-state=disabled
 - name: deploy-pas
   build_logs_to_retain: 5
   plan:
@@ -1414,6 +1455,103 @@ jobs:
                     -state terraform-state/terraform.tfstate \
                     -state-out tfstate-output/terraform.tfstate \
                     template
+- name: show-ssh-opsman-script
+  build_logs_to_retain: 5
+  plan:
+  - aggregate:
+    - get: terraform-state
+      passed:
+      - config-director
+  - task: show-ssh-opsman-script
+    params:
+      OPS_MGR_USR: ((ops_mgr_usr))
+      OPS_MGR_PWD: ((ops_mgr_pwd))
+    config:
+      platform: linux
+      image_resource:
+        type: docker-image
+        source:
+          repository: pcfnorm/rootfs
+          tag: 1.0.19
+      inputs:
+      - name: terraform-state
+      run:
+        path: bash
+        args: 
+        - -c
+        - |
+          set -e
+          cp /usr/local/bin/om-linux /usr/local/bin/om
+          cp terraform-state/terraform.tfstate ./
+          OPSMAN_DOMAIN_OR_IP_ADDRESS=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.ops_manager_dns.value')
+          OPS_MANAGER_SSH_PRIVATE_KEY=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.ops_manager_ssh_private_key.value')
+          
+          cat <<EOF
+          #!/bin/bash
+          cat << KEY > opsman.pem
+          ${OPS_MANAGER_SSH_PRIVATE_KEY}
+          KEY
+          ssh -i opsman.pem -o "StrictHostKeyChecking=no" -l ubuntu ${OPSMAN_DOMAIN_OR_IP_ADDRESS}
+          EOF
+- name: configure-bosh-cli
+  build_logs_to_retain: 5
+  plan:
+  - aggregate:
+    - get: terraform-state
+      passed:
+      - config-pas
+  - task: configure-bosh-cli
+    params:
+      PIVNET_API_TOKEN: ((pivnet_api_token))
+      OPS_MGR_USR: ((ops_mgr_usr))
+      OPS_MGR_PWD: ((ops_mgr_pwd))
+    config:
+      platform: linux
+      image_resource:
+        type: docker-image
+        source:
+          repository: pcfnorm/rootfs
+          tag: 1.0.19
+      inputs:
+      - name: terraform-state
+      run:
+        path: bash
+        args: 
+        - -c
+        - |
+          set -e
+          cp /usr/local/bin/om-linux /usr/local/bin/om
+          cp terraform-state/terraform.tfstate ./
+          OPSMAN_DOMAIN_OR_IP_ADDRESS=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.ops_manager_dns.value')
+          OPS_MANAGER_SSH_PRIVATE_KEY=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.ops_manager_ssh_private_key.value')
+          
+          cat <<EOF > opsman.pem
+          ${OPS_MANAGER_SSH_PRIVATE_KEY}
+          EOF
+          chmod 400 opsman.pem
+          GUID=$(om \
+                --target "https://${OPSMAN_DOMAIN_OR_IP_ADDRESS}" \
+                --username "$OPS_MGR_USR" \
+                --password "$OPS_MGR_PWD" \
+                --skip-ssl-validation \
+                curl \
+                --silent \
+                --path "/api/v0/staged/products" \
+                -x GET \
+                | jq -r '.[] | select(.type == "p-bosh") | .guid')
+          BOSH_CLI=$(om \
+                --target "https://${OPSMAN_DOMAIN_OR_IP_ADDRESS}" \
+                --username "$OPS_MGR_USR" \
+                --password "$OPS_MGR_PWD" \
+                --skip-ssl-validation \
+                curl \
+                --silent \
+                --path "/api/v0/deployed/director/credentials/bosh_commandline_credentials" \
+                -x GET \
+                | jq -r '.credential')
+          ssh -q -i opsman.pem \
+            -o "StrictHostKeyChecking=no" \
+            ubuntu@${OPSMAN_DOMAIN_OR_IP_ADDRESS} "echo $BOSH_CLI | sed 's/ /\n/g' | sed 's/^/export /g' | sed '/bosh/d' | sudo tee /etc/profile.d/bosh.sh" > /dev/null
 
 # - name: show-cf-login-as-admin
 #   build_logs_to_retain: 5
