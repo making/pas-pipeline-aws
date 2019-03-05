@@ -1,0 +1,29 @@
+- type: replace
+  path: /vm_types/name=t2.nano?
+  value: 
+    name: t2.nano
+    ram: 512
+    cpu: 1
+    ephemeral_disk: 8192
+    raw_instance_storage: false
+    builtin: false
+- type: replace
+  path: /vm_types/name=t2.medium?
+  value: 
+    name: t2.medium
+    ram: 4096
+    cpu: 2
+    ephemeral_disk: 32768
+    raw_instance_storage: false
+    builtin: true
+- type: replace
+  path: /vm_types/name=m4.large?
+  value: 
+    name: m4.large
+    ram: 8192
+    cpu: 2
+    ephemeral_disk: 32768
+    raw_instance_storage: false
+    builtin: true
+- type: remove
+  path: /vm_types/name=c4.large?
