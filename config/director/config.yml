@@ -138,4 +138,24 @@ resource-configuration:
     instance_type:
       id: automatic
     internet_connected: false
-vmextensions-configuration: []
+vmextensions-configuration:
+- name: spot-instance-m4-large
+  cloud_properties:
+    spot_bid_price: 0.0320
+    spot_ondemand_fallback: true
+- name: spot-instance-t2-micro
+  cloud_properties:
+    spot_bid_price: 0.0050
+    spot_ondemand_fallback: true
+- name: spot-instance-t2-small
+  cloud_properties:
+    spot_bid_price: 0.0095
+    spot_ondemand_fallback: true
+- name: spot-instance-t2-medium
+  cloud_properties:
+    spot_bid_price: 0.0190
+    spot_ondemand_fallback: true
+- name: spot-instance-r4-xlarge
+  cloud_properties:
+    spot_bid_price: 0.0655
+    spot_ondemand_fallback: true
