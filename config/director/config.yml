@@ -1,0 +1,141 @@
+az-configuration:
+- name: ((infrastructure_availability_zones_0))
+- name: ((infrastructure_availability_zones_1))
+- name: ((infrastructure_availability_zones_2))
+network-assignment:
+  network:
+    name: ((infrastructure_network_name))
+  other_availability_zones: []
+  singleton_availability_zone:
+    name: ((infrastructure_availability_zones_1))
+networks-configuration:
+  icmp_checks_enabled: false
+  networks:
+  - name: ((infrastructure_network_name))
+    subnets:
+    - iaas_identifier: ((infrastructure_iaas_identifier_0))
+      cidr: ((infrastructure_network_cidr_0))
+      dns: ((infrastructure_dns_0))
+      gateway: ((infrastructure_gateway_0))
+      reserved_ip_ranges: ((infrastructure_reserved_ip_ranges_0))
+      availability_zone_names:
+      - ((infrastructure_availability_zones_0))
+    - iaas_identifier: ((infrastructure_iaas_identifier_1))
+      cidr: ((infrastructure_network_cidr_1))
+      dns: ((infrastructure_dns_1))
+      gateway: ((infrastructure_gateway_1))
+      reserved_ip_ranges: ((infrastructure_reserved_ip_ranges_1))
+      availability_zone_names:
+      - ((infrastructure_availability_zones_1))
+    - iaas_identifier: ((infrastructure_iaas_identifier_2))
+      cidr: ((infrastructure_network_cidr_2))
+      dns: ((infrastructure_dns_2))
+      gateway: ((infrastructure_gateway_2))
+      reserved_ip_ranges: ((infrastructure_reserved_ip_ranges_2))
+      availability_zone_names:
+      - ((infrastructure_availability_zones_2))
+  - name: ((deployment_network_name))
+    subnets:
+    - iaas_identifier: ((deployment_iaas_identifier_0))
+      cidr: ((deployment_network_cidr_0))
+      dns: ((deployment_dns_0))
+      gateway: ((deployment_gateway_0))
+      reserved_ip_ranges: ((deployment_reserved_ip_ranges_0))
+      availability_zone_names:
+      - ((deployment_availability_zones_0))
+    - iaas_identifier: ((deployment_iaas_identifier_1))
+      cidr: ((deployment_network_cidr_1))
+      dns: ((deployment_dns_1))
+      gateway: ((deployment_gateway_1))
+      reserved_ip_ranges: ((deployment_reserved_ip_ranges_1))
+      availability_zone_names:
+      - ((deployment_availability_zones_1))
+    - iaas_identifier: ((deployment_iaas_identifier_2))
+      cidr: ((deployment_network_cidr_2))
+      dns: ((deployment_dns_2))
+      gateway: ((deployment_gateway_2))
+      reserved_ip_ranges: ((deployment_reserved_ip_ranges_2))
+      availability_zone_names:
+      - ((deployment_availability_zones_2))
+  - name: ((services_network_name))
+    subnets:
+    - iaas_identifier: ((services_iaas_identifier_0))
+      cidr: ((services_network_cidr_0))
+      dns: ((services_dns_0))
+      gateway: ((services_gateway_0))
+      reserved_ip_ranges: ((services_reserved_ip_ranges_0))
+      availability_zone_names:
+      - ((services_availability_zones_0))
+    - iaas_identifier: ((services_iaas_identifier_1))
+      cidr: ((services_network_cidr_1))
+      dns: ((services_dns_1))
+      gateway: ((services_gateway_1))
+      reserved_ip_ranges: ((services_reserved_ip_ranges_1))
+      availability_zone_names:
+      - ((services_availability_zones_1))
+    - iaas_identifier: ((services_iaas_identifier_2))
+      cidr: ((services_network_cidr_2))
+      dns: ((services_dns_2))
+      gateway: ((services_gateway_2))
+      reserved_ip_ranges: ((services_reserved_ip_ranges_2))
+      availability_zone_names:
+      - ((services_availability_zones_2))
+properties-configuration:
+  director_configuration:
+    allow_legacy_agents: true
+    blobstore_type: s3
+    bosh_recreate_on_next_deploy: false
+    bosh_recreate_persistent_disks_on_next_deploy: false
+    database_type: internal
+    director_worker_count: 5
+    encryption:
+      keys: []
+      providers: []
+    hm_emailer_options:
+      enabled: false
+    hm_pager_duty_options:
+      enabled: false
+    identification_tags: {}
+    keep_unreachable_vms: false
+    ntp_servers_string: 0.amazon.pool.ntp.org, 1.amazon.pool.ntp.org, 2.amazon.pool.ntp.org, 3.amazon.pool.ntp.org
+    post_deploy_enabled: true
+    resurrector_enabled: true
+    retry_bosh_deploys: false
+    s3_blobstore_options:
+      endpoint: https://s3-((region)).amazonaws.com
+      bucket_name: ((ops_manager_bucket))
+      access_key: ((access_key_id))
+      secret_key: ((secret_access_key))
+      signature_version: "4"
+      region: ((region))
+    skip_director_drain: true
+  iaas_configuration:
+    access_key_id: ((access_key_id))
+    secret_access_key: ((secret_access_key))
+    security_group: ((security_group))
+    key_pair_name: ((key_pair_name))
+    ssh_private_key: ((ssh_private_key))
+    region: ((region))
+  dns_configuration:
+    excluded_recursors: []
+    handlers: []
+  security_configuration:
+    generate_vm_passwords: true
+    opsmanager_root_ca_trusted_certs: true
+    trusted_certificates: ((om_trusted_certs))
+  syslog_configuration:
+    enabled: false
+resource-configuration:
+  compilation:
+    instances: automatic
+    instance_type:
+      id: automatic
+    internet_connected: false
+  director:
+    instances: automatic
+    persistent_disk:
+      size_mb: automatic
+    instance_type:
+      id: automatic
+    internet_connected: false
+vmextensions-configuration: {}
