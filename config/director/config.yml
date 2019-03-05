@@ -138,4 +138,4 @@ resource-configuration:
     instance_type:
       id: automatic
     internet_connected: false
-vmextensions-configuration: {}
+vmextensions-configuration: []
