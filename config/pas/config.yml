@@ -122,8 +122,7 @@ product-properties:
     value: 
       secret: ((rds_password))
   .properties.credhub_database.external.tls_ca:
-    value:  |
-((rds_ca))
+    value:  ((rds_ca))
   .properties.system_blobstore:
     value: external
   .properties.system_blobstore.external.endpoint:
