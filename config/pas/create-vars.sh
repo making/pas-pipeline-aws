@@ -24,7 +24,6 @@ export RDS_ADDRESS=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].
 export RDS_PORT=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.rds_port.value')
 export RDS_USERNAME=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.rds_username.value')
 export RDS_PASSWORD=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.rds_password.value')
-export
 curl -L -J -O https://s3.amazonaws.com/rds-downloads/rds-ca-2015-$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.region.value').pem
 curl -L -J -O https://s3.amazonaws.com/rds-downloads/rds-ca-2015-root.pem
 cat rds-ca-2015-ap-northeast-1.pem rds-ca-2015-root.pem > combined.pem
