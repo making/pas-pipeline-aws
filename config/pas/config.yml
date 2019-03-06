@@ -17,7 +17,9 @@ product-properties:
         cert_pem: ((cert_pem))
         private_key_pem: ((key_pem))
   .properties.logger_endpoint_port:
-    value: 4443
+    value: 443
+  .properties.experimental_dynamic_egress_enforcement
+    value: 1
   .properties.security_acknowledgement:
     value: X
   .properties.secure_service_instance_credentials:
