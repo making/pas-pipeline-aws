@@ -25,9 +25,9 @@ export RDS_PORT=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].out
 export RDS_USERNAME=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.rds_username.value')
 export RDS_PASSWORD=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.rds_password.value')
 export
-export curl -L -J -O https://s3.amazonaws.com/rds-downloads/rds-ca-2015-$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.region.value').pem
-export curl -L -J -O https://s3.amazonaws.com/rds-downloads/rds-ca-2015-root.pem
-export cat rds-ca-2015-ap-northeast-1.pem rds-ca-2015-root.pem > combined.pem
+curl -L -J -O https://s3.amazonaws.com/rds-downloads/rds-ca-2015-$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.region.value').pem
+curl -L -J -O https://s3.amazonaws.com/rds-downloads/rds-ca-2015-root.pem
+cat rds-ca-2015-ap-northeast-1.pem rds-ca-2015-root.pem > combined.pem
 export RDS_CA=$(cat combined.pem | sed 's/^/          /')
 if [ "${CERT_PEM}" == "" ];then
 	WILDCARD_DOMAIN=`echo ${OM_TARGET} | sed 's/pcf/*.pks/g'`
