@@ -8,10 +8,9 @@ export SYSTEM_DOMAIN=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0
 export PAS_MAIN_NETWORK_NAME=pas-main
 export PAS_SERVICES_NETWORK_NAME=pas-services
 export APPS_DOMAIN=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.apps_domain.value')
-export WEB_LB_NAME=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.web_lb_name.value')
-export SSH_LB_NAME=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.diego_ssh_lb_name.value')
-export MYSQL_LB_NAME=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.mysql_lb_name.value')
-export TCP_LB_NAME=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.tcp_lb_name.value')
+export WEB_TARGET_GROUPS=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.web_target_groups.value')
+export SSH_TARGET_GROUPS=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.ssh_target_groups.value')
+export TCP_TARGET_GROUPS=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.tcp_target_groups.value')
 export ACCESS_KEY_ID=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.ops_manager_iam_user_access_key.value')
 export SECRET_ACCESS_KEY=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.ops_manager_iam_user_secret_key.value')
 export S3_ENDPOINT=https://s3.$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.region.value').amazonaws.com
@@ -55,10 +54,9 @@ pas_services_network_name: ${PAS_SERVICES_NETWORK_NAME}
 availability_zones: ${AVAILABILITY_ZONES}
 singleton_availability_zone: ${SINGLETON_AVAILABILITY_ZONE}
 apps_domain=${APPS_DOMAIN}
-web_lb_name: ${WEB_LB_NAME}
-ssh_lb_name: ${SSH_LB_NAME}
-mysql_lb_name: ${MYSQL_LB_NAME}
-tcp_lb_name: ${TCP_LB_NAME}
+web_target_groups: ${WEB_TARGET_GROUPS}
+ssh_target_groups: ${SSH_TARGET_GROUPS}
+tcp_target_groups: ${TCP_TARGET_GROUPS}
 access_key_id: ${ACCESS_KEY_ID}
 secret_access_key: ${SECRET_ACCESS_KEY}
 s3_endpoint: ${S3_ENDPOINT}
