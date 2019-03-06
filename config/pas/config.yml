@@ -62,7 +62,7 @@ product-properties:
     value: ((rds_username))
   .properties.system_database.external.ccdb_password:
     value: 
-      secret: ((rds_password ))
+      secret: ((rds_password))
   .properties.system_database.external.diego_username:
     value: ((rds_username))
   .properties.system_database.external.diego_password:
@@ -77,27 +77,27 @@ product-properties:
     value: ((rds_username))
   .properties.system_database.external.networkpolicyserver_password:
     value: 
-      secret: ((rds_password ))
+      secret: ((rds_password))
   .properties.system_database.external.nfsvolume_username:
     value: ((rds_username))
   .properties.system_database.external.nfsvolume_password:
     value: 
-      secret: ((rds_password ))
+      secret: ((rds_password))
   .properties.system_database.external.notifications_username:
     value: ((rds_username))
   .properties.system_database.external.notifications_password:
     value: 
-      secret: ((rds_password ))
+      secret: ((rds_password))
   .properties.system_database.external.account_username:
     value: ((rds_username))
   .properties.system_database.external.account_password:
     value: 
-      secret: ((rds_password ))
+      secret: ((rds_password))
   .properties.system_database.external.routing_username:
     value: ((rds_username))
   .properties.system_database.external.routing_password:
     value: 
-      secret: ((rds_password ))
+      secret: ((rds_password))
   .properties.system_database.external.silk_username:
     value: ((rds_username))
   .properties.system_database.external.silk_password:
@@ -136,7 +136,7 @@ product-properties:
     value: ((access_key_id))
   .properties.system_blobstore.external.secret_key:
     value: 
-      secret: "((secret_access_key"))
+      secret: "((secret_access_key))"
   .properties.system_blobstore.external.signature_version:
     value: 4
   .properties.system_blobstore.external.region:
