@@ -28,7 +28,7 @@
 - type: replace
   path: /vm_types/name=m4.xlarge?
   value: 
-    name: m4.large
+    name: m4.xlarge
     ram: 16384
     cpu: 4
     ephemeral_disk: 32768
