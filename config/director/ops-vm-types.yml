@@ -15,7 +15,7 @@
     cpu: 2
     ephemeral_disk: 32768
     raw_instance_storage: false
-    builtin: true
+    builtin: false
 - type: replace
   path: /vm_types/name=m4.large?
   value: 
@@ -24,6 +24,15 @@
     cpu: 2
     ephemeral_disk: 32768
     raw_instance_storage: false
-    builtin: true
+    builtin: false
+- type: replace
+  path: /vm_types/name=m4.xlarge?
+  value: 
+    name: m4.large
+    ram: 16384
+    cpu: 4
+    ephemeral_disk: 32768
+    raw_instance_storage: false
+    builtin: false
 - type: remove
   path: /vm_types/name=c4.large?
