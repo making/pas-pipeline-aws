@@ -29,8 +29,9 @@ curl -L -J -O https://s3.amazonaws.com/rds-downloads/rds-ca-2015-root.pem
 cat rds-ca-2015-ap-northeast-1.pem rds-ca-2015-root.pem > combined.pem
 export RDS_CA=$(cat combined.pem | sed 's/^/          /')
 if [ "${CERT_PEM}" == "" ];then
-	WILDCARD_DOMAIN=`echo ${OM_TARGET} | sed 's/pcf/*.pks/g'`
-	CERTIFICATES=`om generate-certificate -d ${WILDCARD_DOMAIN}`
+	APPS_DOMAIN=`echo ${OM_TARGET} | sed 's/pcf/apps/g'`
+	SYSTEM_DOMAIN=`echo ${OM_TARGET} | sed 's/pcf/sys/g'`
+	CERTIFICATES=`om generate-certificate -d "*.$APPS_DOMAIN *.$SYSTEM_DOMAIN *.uaa.$SYSTEM_DOMAIN *.login.$SYSTEM_DOMAIN"`
 	CERT_PEM=`echo $CERTIFICATES | jq -r '.certificate'`
 	KEY_PEM=`echo $CERTIFICATES | jq -r '.key'`
 fi
