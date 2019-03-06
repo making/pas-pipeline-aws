@@ -71,4 +71,10 @@ rds_username: ${RDS_USERNAME}
 rds_password: ${RDS_PASSWORD}
 rds_ca: |
 ${RDS_CA}
+smtp_from: ${SMTP_FROM}
+smtp_address: ${SMTP_ADDRESS}
+smtp_port: ${SMTP_PORT}
+smtp_username: ${SMTP_USERNAME}
+smtp_password: ${SMTP_PASSWORD}
+smtp_enable_starttls: ${SMTP_ENABLE_STARTTLS}
 EOF
