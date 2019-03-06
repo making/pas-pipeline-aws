@@ -163,3 +163,9 @@ vmextensions-configuration:
   cloud_properties:
     spot_bid_price: 0.0700
     spot_ondemand_fallback: true
+- name: pas-web-lb
+  cloud_properties:
+    lb_target_groups: ((web_target_groups))
+    security_groups:
+    - ((web_lb_security_group))
+    - ((vms_security_group))

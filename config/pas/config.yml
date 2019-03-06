@@ -217,6 +217,7 @@ resource-config:
       id: t2.micro
     additional_vm_extensions:
     - spot-instance-t2-micro
+    - pas-web-lb
   mysql_monitor:
     instances: 0
     instance_type:
@@ -224,7 +225,7 @@ resource-config:
     additional_vm_extensions:
     - spot-instance-t2-micro
   tcp_router:
-    instances: 1
+    instances: 0
     instance_type:
       id: t2.micro
     additional_vm_extensions:

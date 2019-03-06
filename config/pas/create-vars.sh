@@ -47,6 +47,9 @@ ${KEY_PEM}
 EOF
 `
 
+export WEB_LB_SECURITY_GROUP=$(cat $TF_DIR/terraform.tfstate | jq -r '.modules[4].resources["aws_security_group.web_lb"].primary.attributes.name')
+export VMS_SECURITY_GROUP=$(cat $TF_DIR/terraform.tfstate | jq -r '.modules[2].resources["aws_security_group.vms_security_group"].primary.attributes.name')
+
 
 cat <<EOF > vars.yml
 cert_pem: |
@@ -88,4 +91,6 @@ smtp_port: ${SMTP_PORT}
 smtp_username: ${SMTP_USERNAME}
 smtp_password: ${SMTP_PASSWORD}
 smtp_enable_starttls: ${SMTP_ENABLE_STARTTLS}
+web_lb_security_group: ${WEB_LB_SECURITY_GROUP}
+vms_security_group: ${VMS_SECURITY_GROUP}
 EOF
