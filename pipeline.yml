@@ -513,7 +513,7 @@ jobs:
     - get: terraform-state
       passed:
       - upload-pas
-      trigger: false
+      trigger: true
     - get: template
     - get: config
     - get: pcf-pipelines
