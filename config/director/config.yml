@@ -141,7 +141,7 @@ resource-configuration:
 vmextensions-configuration:
 - name: spot-instance-m4-large
   cloud_properties:
-    spot_bid_price: 0.0320
+    spot_bid_price: 0.0340
     spot_ondemand_fallback: true
 - name: spot-instance-m4-xlarge
   cloud_properties:
