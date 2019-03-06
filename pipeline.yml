@@ -39,6 +39,11 @@ resources:
     api_token: ((pivnet_api_token))
     product_slug: ops-manager
     product_version: 2\.4\.5
+- name: credhub-service-broker
+  type: pivnet
+  source:
+    api_token: ((pivnet_api_token))
+    product_slug: credhub-service-broker
 - name: config
   type: git
   source:
@@ -565,13 +570,142 @@ jobs:
             --config ./config/config/pas/config.yml \
             --vars-file vars.yml
 
-- name: deploy-pas
+- name: upload-credhub-service-broker
   build_logs_to_retain: 5
+  serial_groups: [terraform]
   plan:
   - aggregate:
     - get: terraform-state
       passed:
       - config-pas
+      trigger: true
+    - get: pcf-pipelines
+    - get: pivnet-product
+      resource: credhub-service-broker
+      params:
+        globs:
+        - "*.pivotal"
+  - task: upload-tile
+    params:
+      # for pcf-pipeline
+      OPSMAN_CLIENT_ID: ""
+      OPSMAN_CLIENT_SECRET: ""
+      OPS_MGR_USR: ((ops_mgr_usr))
+      OPS_MGR_PWD: ((ops_mgr_pwd))
+      PIVNET_API_TOKEN: ((pivnet_api_token))
+      NO_PROXY: ""
+      OM_IP: ""
+      IAAS: aws
+    config:
+      platform: linux
+      image_resource:
+        type: docker-image
+        source:
+          repository: cfinfrastructure/releng-tools
+          tag: latest
+      inputs:
+      - name: terraform-state
+      - name: pcf-pipelines
+      - name: pivnet-product
+      run:
+        path: bash
+        args: 
+        - -c
+        - |
+          set -euo pipefail
+          ln -s /usr/local/bin/om /usr/local/bin/om-linux
+          wget https://github.com/pivotal-cf/pivnet-cli/releases/download/v0.0.55/pivnet-linux-amd64-0.0.55
+          install pivnet-linux-amd64-0.0.55 /usr/local/bin/pivnet-cli
+          export OPSMAN_DOMAIN_OR_IP_ADDRESS=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.ops_manager_dns.value')
+          ./pcf-pipelines/tasks/upload-product-and-stemcell/task.sh
+  - task: stage-tile
+    params:
+      # for pcf-pipeline
+      OPSMAN_CLIENT_ID: ""
+      OPSMAN_CLIENT_SECRET: ""
+      OPSMAN_USERNAME: ((ops_mgr_usr))
+      OPSMAN_PASSWORD: ((ops_mgr_pwd))
+    config:
+      platform: linux
+      image_resource:
+        type: docker-image
+        source:
+          repository: cfinfrastructure/releng-tools
+          tag: latest
+      inputs:
+      - name: terraform-state
+      - name: pcf-pipelines
+      - name: pivnet-product
+      run:
+        path: bash
+        args: 
+        - -c
+        - |
+          set -euo pipefail
+          apt-get install -y ruby
+          ln -s /usr/local/bin/om /usr/local/bin/om-linux
+          export OPSMAN_DOMAIN_OR_IP_ADDRESS=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.ops_manager_dns.value')
+          ./pcf-pipelines/tasks/stage-product/task.sh || true
+
+- name: config-credbhub-service-broker
+  build_logs_to_retain: 5
+  serial: true
+  plan:
+  - aggregate:
+    - get: terraform-state
+      passed:
+      - upload-credhub-service-broker
+      trigger: true
+    - get: template
+    - get: config
+    - get: pcf-pipelines
+    - get: pivnet-product
+      resource: credhub-service-broker
+      params:
+        globs:
+        - "*.pivotal"
+      passed:
+      - upload-credhub-service-broker
+      trigger: true
+  - task: configure-product
+    params:
+      OM_USERNAME: ((ops_mgr_usr))
+      OM_PASSWORD: ((ops_mgr_pwd))
+      OM_SKIP_SSL_VALIDATION: true
+    config:
+      platform: linux
+      image_resource:
+        type: docker-image
+        source:
+          repository: cfinfrastructure/releng-tools
+          tag: latest
+      inputs:
+      - name: terraform-state
+      - name: template
+      - name: config
+      - name: pcf-pipelines
+      run:
+        path: bash
+        args: 
+        - -c
+        - |
+          set -eo pipefail
+          export OM_TARGET=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.ops_manager_dns.value')
+          export TF_DIR=terraform-state
+          
+          ./config/config/credhub-service-broker/create-vars.sh
+
+          om configure-product \
+            --config ./config/config/credhub-service-broker/config.yml \
+            --vars-file vars.yml
+
+- name: deploy
+  build_logs_to_retain: 5
+  plan:
+  - aggregate:
+    - get: terraform-state
+      passed:
+      - config-credbhub-service-broker
       trigger: true
     - get: pcf-pipelines
   - task: apply-changes
