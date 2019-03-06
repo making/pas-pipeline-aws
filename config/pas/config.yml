@@ -1,4 +1,4 @@
-product-name: elastic-runtime
+product-name: cf
 product-properties:
   .cloud_controller.system_domain:
     value: ((system_domain))
