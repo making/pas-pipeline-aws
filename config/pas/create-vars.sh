@@ -71,4 +71,6 @@ rds_address: ${RDS_ADDRESS}
 rds_port: ${RDS_PORT}
 rds_username: ${RDS_USERNAME}
 rds_password: ${RDS_PASSWORD}
+rds_ca: |
+${RDS_CA}
 EOF
