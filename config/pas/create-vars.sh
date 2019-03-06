@@ -7,7 +7,8 @@ export AVAILABILITY_ZONE_NAMES=$(cat terraform-state/terraform.tfstate | jq -r '
 export SYSTEM_DOMAIN=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.sys_domain.value')
 export PAS_MAIN_NETWORK_NAME=pas-main
 export PAS_SERVICES_NETWORK_NAME=pas-services
-export APPS_DOMAIN=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.apps_domain.value')
+export APPS_DOMAIN=`echo ${OM_TARGET} | sed 's/pcf/apps/g'`
+export SYSTEM_DOMAIN=`echo ${OM_TARGET} | sed 's/pcf/sys/g'`
 export WEB_TARGET_GROUPS=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.web_target_groups.value')
 export SSH_TARGET_GROUPS=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.ssh_target_groups.value')
 export TCP_TARGET_GROUPS=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.tcp_target_groups.value')
@@ -28,8 +29,6 @@ curl -L -J -O https://s3.amazonaws.com/rds-downloads/rds-ca-2015-root.pem
 cat rds-ca-2015-ap-northeast-1.pem rds-ca-2015-root.pem > combined.pem
 export RDS_CA=$(cat combined.pem | sed 's/^/  /')
 if [ "${CERT_PEM}" == "" ];then
-	APPS_DOMAIN=`echo ${OM_TARGET} | sed 's/pcf/apps/g'`
-	SYSTEM_DOMAIN=`echo ${OM_TARGET} | sed 's/pcf/sys/g'`
 	CERTIFICATES=`om generate-certificate -d "*.$APPS_DOMAIN *.$SYSTEM_DOMAIN *.uaa.$SYSTEM_DOMAIN *.login.$SYSTEM_DOMAIN"`
 	CERT_PEM=`echo $CERTIFICATES | jq -r '.certificate'`
 	KEY_PEM=`echo $CERTIFICATES | jq -r '.key'`
@@ -54,6 +53,7 @@ pas_services_network_name: ${PAS_SERVICES_NETWORK_NAME}
 availability_zones: ${AVAILABILITY_ZONES}
 singleton_availability_zone: ${SINGLETON_AVAILABILITY_ZONE}
 apps_domain: ${APPS_DOMAIN}
+system_domain: ${SYSTEM_DOMAIN}
 web_target_groups: ${WEB_TARGET_GROUPS}
 ssh_target_groups: ${SSH_TARGET_GROUPS}
 tcp_target_groups: ${TCP_TARGET_GROUPS}
