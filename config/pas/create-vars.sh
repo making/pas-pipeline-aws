@@ -53,7 +53,7 @@ pas_main_network_name: ${PAS_MAIN_NETWORK_NAME}
 pas_services_network_name: ${PAS_SERVICES_NETWORK_NAME}
 availability_zones: ${AVAILABILITY_ZONES}
 singleton_availability_zone: ${SINGLETON_AVAILABILITY_ZONE}
-apps_domain=${APPS_DOMAIN}
+apps_domain: ${APPS_DOMAIN}
 web_target_groups: ${WEB_TARGET_GROUPS}
 ssh_target_groups: ${SSH_TARGET_GROUPS}
 tcp_target_groups: ${TCP_TARGET_GROUPS}
