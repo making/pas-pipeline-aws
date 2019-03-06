@@ -20,6 +20,11 @@ export PAS_BUILDPACKS_BUCKET=$(cat terraform-state/terraform.tfstate | jq -r '.m
 export PAS_DROPLETS_BUCKET=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.pas_droplets_bucket.value')
 export PAS_PACKAGES_BUCKET=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.pas_packages_bucket.value')
 export PAS_RESOURCES_BUCKET=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.pas_resources_bucket.value')
+export PAS_BUILDPACKS_BACKUP_BUCKET=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.pas_buildpacks_backup_bucket.value')
+export PAS_DROPLETS_BACKUP_BUCKET=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.pas_droplets_backup_bucket.value')
+export PAS_PACKAGES_BACKUP_BUCKET=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.pas_packages_backup_bucket.value')
+export PAS_RESOURCES_BACKUP_BUCKET=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.pas_resources_backup_bucket.value')
+export BLOBSTORE_KMS_KEY_ID=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.blobstore_kms_key_id.value')
 export RDS_ADDRESS=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.rds_address.value')
 export RDS_PORT=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.rds_port.value')
 export RDS_USERNAME=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.rds_username.value')
@@ -41,6 +46,7 @@ export KEY_PEM=`cat <<EOF | sed 's/^/  /'
 ${KEY_PEM}
 EOF
 `
+
 
 cat <<EOF > vars.yml
 cert_pem: |
@@ -65,6 +71,11 @@ pas_buildpacks_bucket: ${PAS_BUILDPACKS_BUCKET}
 pas_droplets_bucket: ${PAS_DROPLETS_BUCKET}
 pas_packages_bucket: ${PAS_PACKAGES_BUCKET}
 pas_resources_bucket: ${PAS_RESOURCES_BUCKET}
+# pas_buildpacks_backup_bucket: ${PAS_BUILDPACKS_BACKUP_BUCKET}
+# pas_droplets_backup_bucket: ${PAS_DROPLETS_BACKUP_BUCKET}
+# pas_packages_backup_bucket: ${PAS_PACKAGES_BACKUP_BUCKET}
+# pas_resources_backup_bucket: ${PAS_RESOURCES_BACKUP_BUCKET}
+blobstore_kms_key_id: ${BLOBSTORE_KMS_KEY_ID}
 rds_address: ${RDS_ADDRESS}
 rds_port: ${RDS_PORT}
 rds_username: ${RDS_USERNAME}

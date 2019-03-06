@@ -110,6 +110,8 @@ product-properties:
   .properties.uaa_database.external.uaa_password:
     value: 
       secret: ((rds_password))
+  .properties.uaa_database.external.ca_cert:
+    value:  ((rds_ca))
   .properties.credhub_database:
     value: external
   .properties.credhub_database.external.host:
@@ -144,6 +146,8 @@ product-properties:
     value: ((pas_packages_bucket))
   .properties.system_blobstore.external.resources_bucket:
     value: ((pas_resources_bucket))
+  .properties.system_blobstore.external.encryption_kms_key_id:
+    value: ((blobstore_kms_key_id))
   .properties.autoscale_instance_count:
     value: 1
   .properties.smtp_from:
@@ -158,6 +162,8 @@ product-properties:
       password: ((smtp_password))
   .properties.smtp_enable_starttls_auto:
     value: ((smtp_enable_starttls))
+  .properties.metric_registrar_enabled:
+    value: 1
 network-properties:
   network:
     name: ((pas_main_network_name))
@@ -171,6 +177,8 @@ resource-config:
     instances: 1
     instance_type:
       id: m4.large
+    persistent_disk:
+      size_mb: "10240"
     additional_vm_extensions:
     - spot-instance-m4-large
   blobstore:
