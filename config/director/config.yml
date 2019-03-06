@@ -143,6 +143,10 @@ vmextensions-configuration:
   cloud_properties:
     spot_bid_price: 0.0320
     spot_ondemand_fallback: true
+- name: spot-instance-m4-xlarge
+  cloud_properties:
+    spot_bid_price: 0.0670
+    spot_ondemand_fallback: true
 - name: spot-instance-t2-micro
   cloud_properties:
     spot_bid_price: 0.0050
@@ -157,5 +161,5 @@ vmextensions-configuration:
     spot_ondemand_fallback: true
 - name: spot-instance-r4-xlarge
   cloud_properties:
-    spot_bid_price: 0.0655
+    spot_bid_price: 0.0700
     spot_ondemand_fallback: true
