@@ -154,4 +154,7 @@ services_availability_zones_2: ${SERVICES_AVAILABILITY_ZONES_2}
 
 web_lb_security_group: ${WEB_LB_SECURITY_GROUP}
 vms_security_group: ${VMS_SECURITY_GROUP}
+web_target_groups: ${WEB_TARGET_GROUPS}
+ssh_target_groups: ${SSH_TARGET_GROUPS}
+tcp_target_groups: ${TCP_TARGET_GROUPS}
 EOF
