@@ -31,7 +31,7 @@
     name: m4.xlarge
     ram: 16384
     cpu: 4
-    ephemeral_disk: 32768
+    ephemeral_disk: 65536
     raw_instance_storage: false
     builtin: false
 - type: remove
