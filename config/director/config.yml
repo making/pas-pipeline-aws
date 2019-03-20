@@ -169,3 +169,9 @@ vmextensions-configuration:
     security_groups:
     - ((web_lb_security_group))
     - ((vms_security_group))
+- name: pas-istio-lb
+  cloud_properties:
+    lb_target_groups: ((istio_target_groups))
+    security_groups:
+    - ((web_lb_security_group))
+    - ((vms_security_group))

@@ -77,7 +77,7 @@ export VMS_SECURITY_GROUP=$(cat $TF_DIR/terraform.tfstate | jq -r '.modules[1].r
 export WEB_TARGET_GROUPS=$(cat $TF_DIR/terraform.tfstate | jq -r '.modules[0].outputs.web_target_groups.value' | tr -d '\n')
 export SSH_TARGET_GROUPS=$(cat $TF_DIR/terraform.tfstate | jq -r '.modules[0].outputs.ssh_target_groups.value' | tr -d '\n')
 export TCP_TARGET_GROUPS=$(cat $TF_DIR/terraform.tfstate | jq -r '.modules[0].outputs.tcp_target_groups.value' | tr -d '\n')
-
+export ISTIO_TARGET_GROUPS=$(cat $TF_DIR/terraform.tfstate | jq -r '.modules[0].outputs.istio_target_groups.value' | tr -d '\n')
 
 cat <<EOF > vars.yml
 access_key_id: ${ACCESS_KEY_ID}
@@ -157,4 +157,5 @@ vms_security_group: ${VMS_SECURITY_GROUP}
 web_target_groups: ${WEB_TARGET_GROUPS}
 ssh_target_groups: ${SSH_TARGET_GROUPS}
 tcp_target_groups: ${TCP_TARGET_GROUPS}
+istio_target_groups: ${ISTIO_TARGET_GROUPS}
 EOF
