@@ -73,6 +73,7 @@ export SINGLETON_AVAILABILITY_NETWORK=$INFRASTRUCTURE_NETWORK_NAME
 export SINGLETON_AVAILABILITY_ZONE=$(cat $TF_DIR/terraform.tfstate | jq -r '.modules[0].outputs.azs.value[0]')
 ## vm extensions
 export WEB_LB_SECURITY_GROUP=$(cat $TF_DIR/terraform.tfstate | jq -r '.modules[4].resources["aws_security_group.web_lb"].primary.attributes.name')
+export ISTIO_LB_SECURITY_GROUP=$(cat $TF_DIR/terraform.tfstate | jq -r '.modules[4].resources["aws_security_group.istio_lb"].primary.attributes.name')
 export VMS_SECURITY_GROUP=$(cat $TF_DIR/terraform.tfstate | jq -r '.modules[1].resources["aws_security_group.vms_security_group"].primary.attributes.name')
 export WEB_TARGET_GROUPS=$(cat $TF_DIR/terraform.tfstate | jq -r '.modules[0].outputs.web_target_groups.value' | tr -d '\n')
 export SSH_TARGET_GROUPS=$(cat $TF_DIR/terraform.tfstate | jq -r '.modules[0].outputs.ssh_target_groups.value' | tr -d '\n')
@@ -153,6 +154,7 @@ services_availability_zones_2: ${SERVICES_AVAILABILITY_ZONES_2}
 # vm extensions
 
 web_lb_security_group: ${WEB_LB_SECURITY_GROUP}
+istio_lb_security_group: ${ISTIO_LB_SECURITY_GROUP}
 vms_security_group: ${VMS_SECURITY_GROUP}
 web_target_groups: ${WEB_TARGET_GROUPS}
 ssh_target_groups: ${SSH_TARGET_GROUPS}

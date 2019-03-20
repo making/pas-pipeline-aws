@@ -173,5 +173,5 @@ vmextensions-configuration:
   cloud_properties:
     lb_target_groups: ((istio_target_groups))
     security_groups:
-    - ((web_lb_security_group))
+    - ((istio_lb_security_group))
     - ((vms_security_group))
