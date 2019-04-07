@@ -80,7 +80,7 @@ export SSH_TARGET_GROUPS="[$(terraform output --state=${TF_DIR}/terraform.tfstat
 export TCP_TARGET_GROUPS="[$(terraform output --state=${TF_DIR}/terraform.tfstate tcp_target_groups | tr -d '\n')]"
 export ISTIO_TARGET_GROUPS="[$(terraform output --state=${TF_DIR}/terraform.tfstate istio_target_groups | tr -d '\n')]"
 
-cat <<EOF > vars.yml
+cat <<EOF
 access_key_id: ${ACCESS_KEY_ID}
 secret_access_key: ${SECRET_ACCESS_KEY}
 security_group: ${SECURITY_GROUP}
