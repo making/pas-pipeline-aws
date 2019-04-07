@@ -12,7 +12,7 @@ image_resource:
     tag: latest
 inputs:
 - name: terraform-state
-- name: pas-pipeline
+- name: config
 outputs:
 - name: env
 run:
@@ -21,4 +21,4 @@ run:
   - -c
   - |
     set -eo pipefail
-    ./pas-pipeline/config/director/create-env.sh > env/env.yml
+    ./config/config/director/create-env.sh > env/env.yml
