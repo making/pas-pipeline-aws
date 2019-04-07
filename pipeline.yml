@@ -27,7 +27,7 @@ resources:
   source:
     api_token: ((pivnet_api_token))
     product_slug: elastic-runtime
-    product_version: 2\.5\.0-build\.*
+    product_version: 2\.5\.*
 - name: pcf-pipelines
   type: git
   source:
@@ -38,7 +38,7 @@ resources:
   source:
     api_token: ((pivnet_api_token))
     product_slug: ops-manager
-    product_version: 2\.5\.0-rc\.2
+    product_version: 2\.5\.1
 - name: credhub-service-broker
   type: pivnet
   source:
@@ -207,119 +207,119 @@ jobs:
           }
           EOD
 
-          cat <<'EOD' > template/modules/pas/istio.tf
-          # Istio Load Balancer
+          # cat <<'EOD' > template/modules/pas/istio.tf
+          # # Istio Load Balancer
 
-          resource "aws_security_group" "istio_lb" {
-            name        = "istio_lb_security_group"
-            description = "Load Balancer Security Group"
-            vpc_id      = "${var.vpc_id}"
+          # resource "aws_security_group" "istio_lb" {
+          #   name        = "istio_lb_security_group"
+          #   description = "Load Balancer Security Group"
+          #   vpc_id      = "${var.vpc_id}"
 
-            ingress {
-              cidr_blocks = ["0.0.0.0/0"]
-              protocol    = "tcp"
-              from_port   = 80
-              to_port     = 80
-            }
+          #   ingress {
+          #     cidr_blocks = ["0.0.0.0/0"]
+          #     protocol    = "tcp"
+          #     from_port   = 80
+          #     to_port     = 80
+          #   }
 
-            ingress {
-              cidr_blocks = ["0.0.0.0/0"]
-              protocol    = "tcp"
-              from_port   = 443
-              to_port     = 443
-            }
+          #   ingress {
+          #     cidr_blocks = ["0.0.0.0/0"]
+          #     protocol    = "tcp"
+          #     from_port   = 443
+          #     to_port     = 443
+          #   }
 
-            egress {
-              cidr_blocks = ["0.0.0.0/0"]
-              protocol    = "-1"
-              from_port   = 0
-              to_port     = 0
-            }
+          #   egress {
+          #     cidr_blocks = ["0.0.0.0/0"]
+          #     protocol    = "-1"
+          #     from_port   = 0
+          #     to_port     = 0
+          #   }
 
-            tags = "${merge(var.tags, map("Name", "${var.env_name}-lb-security-group"))}"
-          }
+          #   tags = "${merge(var.tags, map("Name", "${var.env_name}-lb-security-group"))}"
+          # }
 
-          resource "aws_lb" "istio" {
-            name                             = "${var.env_name}-istio-lb"
-            load_balancer_type               = "network"
-            enable_cross_zone_load_balancing = true
-            internal                         = "${var.internetless}"
-            subnets                          = ["${var.public_subnet_ids}"]
-          }
+          # resource "aws_lb" "istio" {
+          #   name                             = "${var.env_name}-istio-lb"
+          #   load_balancer_type               = "network"
+          #   enable_cross_zone_load_balancing = true
+          #   internal                         = "${var.internetless}"
+          #   subnets                          = ["${var.public_subnet_ids}"]
+          # }
 
-          resource "aws_lb_listener" "istio_80" {
-            load_balancer_arn = "${aws_lb.istio.arn}"
-            port              = 80
-            protocol          = "TCP"
+          # resource "aws_lb_listener" "istio_80" {
+          #   load_balancer_arn = "${aws_lb.istio.arn}"
+          #   port              = 80
+          #   protocol          = "TCP"
 
-            default_action {
-              type             = "forward"
-              target_group_arn = "${aws_lb_target_group.istio_80.arn}"
-            }
-          }
+          #   default_action {
+          #     type             = "forward"
+          #     target_group_arn = "${aws_lb_target_group.istio_80.arn}"
+          #   }
+          # }
 
-          resource "aws_lb_listener" "istio_443" {
-            load_balancer_arn = "${aws_lb.istio.arn}"
-            port              = 443
-            protocol          = "TCP"
+          # resource "aws_lb_listener" "istio_443" {
+          #   load_balancer_arn = "${aws_lb.istio.arn}"
+          #   port              = 443
+          #   protocol          = "TCP"
 
-            default_action {
-              type             = "forward"
-              target_group_arn = "${aws_lb_target_group.istio_443.arn}"
-            }
-          }
+          #   default_action {
+          #     type             = "forward"
+          #     target_group_arn = "${aws_lb_target_group.istio_443.arn}"
+          #   }
+          # }
 
-          resource "aws_lb_target_group" "istio_80" {
-            name     = "${var.env_name}-istio-tg-80"
-            port     = 80
-            protocol = "TCP"
-            vpc_id   = "${var.vpc_id}"
+          # resource "aws_lb_target_group" "istio_80" {
+          #   name     = "${var.env_name}-istio-tg-80"
+          #   port     = 80
+          #   protocol = "TCP"
+          #   vpc_id   = "${var.vpc_id}"
 
-            health_check {
-              protocol = "TCP"
-              port     = 8002
-            }
-          }
+          #   health_check {
+          #     protocol = "TCP"
+          #     port     = 8002
+          #   }
+          # }
 
-          resource "aws_lb_target_group" "istio_443" {
-            name     = "${var.env_name}-istio-tg-443"
-            port     = 443
-            protocol = "TCP"
-            vpc_id   = "${var.vpc_id}"
+          # resource "aws_lb_target_group" "istio_443" {
+          #   name     = "${var.env_name}-istio-tg-443"
+          #   port     = 443
+          #   protocol = "TCP"
+          #   vpc_id   = "${var.vpc_id}"
 
-            health_check {
-              protocol = "TCP"
-              port     = 8002
-            }
-          }
+          #   health_check {
+          #     protocol = "TCP"
+          #     port     = 8002
+          #   }
+          # }
 
-          output "istio_target_groups" {
-            value = [
-              "${aws_lb_target_group.istio_80.name}",
-              "${aws_lb_target_group.istio_443.name}",
-            ]
-          }
+          # output "istio_target_groups" {
+          #   value = [
+          #     "${aws_lb_target_group.istio_80.name}",
+          #     "${aws_lb_target_group.istio_443.name}",
+          #   ]
+          # }
 
-          resource "aws_route53_record" "wildcard_mesh_dns" {
-            count   = "${var.use_route53}"
-            zone_id = "${var.zone_id}"
-            name    = "*.mesh.apps.${var.env_name}.${var.dns_suffix}"
-            type    = "A"
+          # resource "aws_route53_record" "wildcard_mesh_dns" {
+          #   count   = "${var.use_route53}"
+          #   zone_id = "${var.zone_id}"
+          #   name    = "*.mesh.apps.${var.env_name}.${var.dns_suffix}"
+          #   type    = "A"
 
-            alias {
-              name                   = "${aws_lb.istio.dns_name}"
-              zone_id                = "${aws_lb.istio.zone_id}"
-              evaluate_target_health = true
-            }
-          }
-          EOD
+          #   alias {
+          #     name                   = "${aws_lb.istio.dns_name}"
+          #     zone_id                = "${aws_lb.istio.zone_id}"
+          #     evaluate_target_health = true
+          #   }
+          # }
+          # EOD
 
-          cat <<'EOF' >> template/terraforming-pas/outputs.tf
+          # cat <<'EOF' >> template/terraforming-pas/outputs.tf
 
-          output "istio_target_groups" {
-            value = "${module.pas.istio_target_groups}"
-          }
-          EOF
+          # output "istio_target_groups" {
+          #   value = "${module.pas.istio_target_groups}"
+          # }
+          # EOF
 
           # Remove SSH/TCP LB
           sed -i 's|resource "aws_security_group" "ssh_lb"|/* resource "aws_security_group" "ssh_lb"|' template/modules/pas/lbs.tf

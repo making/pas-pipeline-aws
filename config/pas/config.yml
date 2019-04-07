@@ -166,14 +166,14 @@ product-properties:
     value: ((smtp_enable_starttls))
   .properties.metric_registrar_enabled:
     value: 1
-  .properties.istio:
-    value: enable
-  .properties.istio_frontend_tls_keypairs:
-    value:
-    - name: pas-wildcard
-      certificate:
-        cert_pem: ((cert_pem))
-        private_key_pem: ((key_pem))
+  # .properties.istio:
+  #   value: enable
+  # .properties.istio_frontend_tls_keypairs:
+  #   value:
+  #   - name: pas-wildcard
+  #     certificate:
+  #       cert_pem: ((cert_pem))
+  #       private_key_pem: ((key_pem))
 network-properties:
   network:
     name: ((pas_main_network_name))
@@ -241,20 +241,20 @@ resource-config:
     additional_vm_extensions:
     - spot-instance-t2-micro
   istio_control:
-    instances: 1
+    instances: 0
     instance_type:
       id: m4.large
     additional_vm_extensions:
     - spot-instance-m4-large
   istio_router:
-    instances: 1
+    instances: 0
     instance_type:
       id: m4.large
     additional_vm_extensions:
     - spot-instance-m4-large
     - pas-istio-lb
   route_syncer:
-    instances: 1
+    instances: 0
     instance_type:
       id: m4.large
     additional_vm_extensions:
