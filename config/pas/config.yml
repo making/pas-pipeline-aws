@@ -16,6 +16,10 @@ product-properties:
       certificate:
         cert_pem: ((cert_pem))
         private_key_pem: ((key_pem))
+  .router.drain_wait:
+    value: 120
+  .router.lb_healthy_threshold:
+    value: 120
   .properties.logger_endpoint_port:
     value: 443
   .properties.experimental_dynamic_egress_enforcement:
