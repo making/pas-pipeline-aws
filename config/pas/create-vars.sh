@@ -1,40 +1,40 @@
 #!/bin/bash
 set -eo pipefail
 
-export SINGLETON_AVAILABILITY_ZONE=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.azs.value[0]')
-export AVAILABILITY_ZONES=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.azs.value | map({name: .})' | tr -d '\n' | tr -d '"')
-export AVAILABILITY_ZONE_NAMES=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.azs.value' | tr -d '\n' | tr -d '"')
-export SYSTEM_DOMAIN=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.sys_domain.value')
+export SINGLETON_AVAILABILITY_ZONE=$(terraform output --state=${TF_DIR}/terraform.tfstate --json azs | jq -r '.value[0]')
+export AVAILABILITY_ZONES=$(terraform output --state=${TF_DIR}/terraform.tfstate --json azs | jq -r '.value | map({name: .})' | tr -d '\n' | tr -d '"')
+export AVAILABILITY_ZONE_NAMES=$(terraform output --state=${TF_DIR}/terraform.tfstate azs | tr -d '\n' | tr -d '"')
+export SYSTEM_DOMAIN=$(terraform output --state=${TF_DIR}/terraform.tfstate sys_domain)
 export PAS_MAIN_NETWORK_NAME=pas-deployment
 export PAS_SERVICES_NETWORK_NAME=pas-services
-export APPS_DOMAIN=`echo ${OM_TARGET} | sed 's/pcf/apps/g'`
-export SYSTEM_DOMAIN=`echo ${OM_TARGET} | sed 's/pcf/sys/g'`
-export WEB_TARGET_GROUPS=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.web_target_groups.value')
-export SSH_TARGET_GROUPS=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.ssh_target_groups.value')
-export TCP_TARGET_GROUPS=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.tcp_target_groups.value')
-export ACCESS_KEY_ID=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.ops_manager_iam_user_access_key.value')
-export SECRET_ACCESS_KEY=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.ops_manager_iam_user_secret_key.value')
-export S3_ENDPOINT=https://s3.$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.region.value').amazonaws.com
-export S3_REGION=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.region.value')
-export PAS_BUILDPACKS_BUCKET=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.pas_buildpacks_bucket.value')
-export PAS_DROPLETS_BUCKET=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.pas_droplets_bucket.value')
-export PAS_PACKAGES_BUCKET=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.pas_packages_bucket.value')
-export PAS_RESOURCES_BUCKET=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.pas_resources_bucket.value')
-export PAS_BUILDPACKS_BACKUP_BUCKET=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.pas_buildpacks_backup_bucket.value')
-export PAS_DROPLETS_BACKUP_BUCKET=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.pas_droplets_backup_bucket.value')
-export PAS_PACKAGES_BACKUP_BUCKET=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.pas_packages_backup_bucket.value')
-export PAS_RESOURCES_BACKUP_BUCKET=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.pas_resources_backup_bucket.value')
-export BLOBSTORE_KMS_KEY_ID=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.blobstore_kms_key_id.value')
-export RDS_ADDRESS=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.rds_address.value')
-export RDS_PORT=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.rds_port.value')
-export RDS_USERNAME=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.rds_username.value')
-export RDS_PASSWORD=$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.rds_password.value')
-curl -L -J -O https://s3.amazonaws.com/rds-downloads/rds-ca-2015-$(cat terraform-state/terraform.tfstate | jq -r '.modules[0].outputs.region.value').pem
+export APPS_DOMAIN=$(terraform output --state=${TF_DIR}/terraform.tfstate apps_domain)
+export SYSTEM_DOMAIN=$(terraform output --state=${TF_DIR}/terraform.tfstate sys_domain)
+export WEB_TARGET_GROUPS=$(terraform output --state=${TF_DIR}/terraform.tfstate web_target_groups | tr -d '\n')
+export SSH_TARGET_GROUPS=$(terraform output --state=${TF_DIR}/terraform.tfstate ssh_target_groups | tr -d '\n')
+export TCP_TARGET_GROUPS=$(terraform output --state=${TF_DIR}/terraform.tfstate tcp_target_groups | tr -d '\n')
+export ACCESS_KEY_ID=$(terraform output --state=${TF_DIR}/terraform.tfstate ops_manager_iam_user_access_key)
+export SECRET_ACCESS_KEY=$(terraform output --state=${TF_DIR}/terraform.tfstate ops_manager_iam_user_secret_key)
+export S3_ENDPOINT=https://s3.$(terraform output --state=${TF_DIR}/terraform.tfstate region).amazonaws.com
+export S3_REGION=$(terraform output --state=${TF_DIR}/terraform.tfstate region)
+export PAS_BUILDPACKS_BUCKET=$(terraform output --state=${TF_DIR}/terraform.tfstate pas_buildpacks_bucket)
+export PAS_DROPLETS_BUCKET=$(terraform output --state=${TF_DIR}/terraform.tfstate pas_droplets_bucket)
+export PAS_PACKAGES_BUCKET=$(terraform output --state=${TF_DIR}/terraform.tfstate pas_packages_bucket)
+export PAS_RESOURCES_BUCKET=$(terraform output --state=${TF_DIR}/terraform.tfstate pas_resources_bucket)
+export PAS_BUILDPACKS_BACKUP_BUCKET=$(terraform output --state=${TF_DIR}/terraform.tfstate pas_buildpacks_backup_bucket)
+export PAS_DROPLETS_BACKUP_BUCKET=$(terraform output --state=${TF_DIR}/terraform.tfstate pas_droplets_backup_bucket)
+export PAS_PACKAGES_BACKUP_BUCKET=$(terraform output --state=${TF_DIR}/terraform.tfstate pas_packages_backup_bucket)
+export PAS_RESOURCES_BACKUP_BUCKET=$(terraform output --state=${TF_DIR}/terraform.tfstate pas_resources_backup_bucket)
+export BLOBSTORE_KMS_KEY_ID=$(terraform output --state=${TF_DIR}/terraform.tfstate blobstore_kms_key_id)
+export RDS_ADDRESS=$(terraform output --state=${TF_DIR}/terraform.tfstate rds_address)
+export RDS_PORT=$(terraform output --state=${TF_DIR}/terraform.tfstate rds_port)
+export RDS_USERNAME=$(terraform output --state=${TF_DIR}/terraform.tfstate rds_username)
+export RDS_PASSWORD=$(terraform output --state=${TF_DIR}/terraform.tfstate rds_password)
+curl -L -J -O https://s3.amazonaws.com/rds-downloads/rds-ca-2015-${S3_REGION}.pem
 curl -L -J -O https://s3.amazonaws.com/rds-downloads/rds-ca-2015-root.pem
-cat rds-ca-2015-ap-northeast-1.pem rds-ca-2015-root.pem > combined.pem
+cat rds-ca-2015-${S3_REGION}.pem rds-ca-2015-root.pem > combined.pem
 export RDS_CA=$(cat combined.pem | sed 's/^/  /')
 if [ "${CERT_PEM}" == "" ];then
-	CERTIFICATES=`om generate-certificate -d "*.$APPS_DOMAIN *.$SYSTEM_DOMAIN *.uaa.$SYSTEM_DOMAIN *.login.$SYSTEM_DOMAIN"`
+	CERTIFICATES=`om --env env/"${ENV_FILE}" generate-certificate -d "*.$APPS_DOMAIN *.$SYSTEM_DOMAIN *.mesh.$APPS_DOMAIN *.uaa.$SYSTEM_DOMAIN *.login.$SYSTEM_DOMAIN"`
 	CERT_PEM=`echo $CERTIFICATES | jq -r '.certificate'`
 	KEY_PEM=`echo $CERTIFICATES | jq -r '.key'`
 fi
@@ -47,7 +47,7 @@ ${KEY_PEM}
 EOF
 `
 
-cat <<EOF > vars.yml
+cat <<EOF
 cert_pem: |
 ${CERT_PEM}
 key_pem: |
