@@ -7,7 +7,7 @@ cat <<EOF
 target: ${OM_TARGET}
 connect-timeout: 5
 request-timeout: 1800
-skip-ssl-validation: true
+skip-ssl-validation: ${OM_SKIP_SSL_VALIDATION:-true}
 username: ${OM_USERNAME}
 password: ${OM_PASSWORD}
 decryption-passphrase: ${OM_DECRYPTION_PASSPHRASE}

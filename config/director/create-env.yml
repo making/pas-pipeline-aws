@@ -1,5 +1,10 @@
 ---
 platform: linux
+params:
+  OM_USERNAME: 
+  OM_PASSWORD: 
+  OM_DECRYPTION_PASSPHRASE: 
+  OM_SKIP_SSL_VALIDATION: 
 image_resource:
   type: docker-image
   source:
