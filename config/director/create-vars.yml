@@ -1,0 +1,19 @@
+---
+platform: linux
+image_resource:
+  type: docker-image
+  source:
+    repository: cfinfrastructure/releng-tools
+    tag: latest
+inputs:
+- name: terraform-state
+- name: pas-pipeline
+outputs:
+- name: env
+run:
+  path: bash
+  args: 
+  - -c
+  - |
+    set -eo pipefail
+    ./pas-pipeline/config/director/create-env.sh > env/env.yml
