@@ -862,7 +862,16 @@ jobs:
   plan:
   - aggregate:
     - get: template
+      passed:
+      - pave-aws
     - get: terraform-state
+      passed:
+      - pave-aws
+    - get: pivnet-opsmgr
+      passed:
+      - pave-aws
+      params:
+        globs: ["*aws*.yml"]
     - get: config
     - get: platform-automation-tasks-s3
       params:
@@ -870,13 +879,36 @@ jobs:
     - get: platform-automation-image-s3
       params:
         unpack: true
-  - task: create-env
-    params:
-      OM_USERNAME: ((ops_mgr_usr))
-      OM_PASSWORD: ((ops_mgr_pwd))
-      OM_DECRYPTION_PASSPHRASE: ((om_decryption_pwd))
-      OM_SKIP_SSL_VALIDATION: true
-    file: config/config/director/create-env.yml
+  - aggregate:
+    - task: create-env
+      params:
+        OM_USERNAME: ((ops_mgr_usr))
+        OM_PASSWORD: ((ops_mgr_pwd))
+        OM_DECRYPTION_PASSPHRASE: ((om_decryption_pwd))
+        OM_SKIP_SSL_VALIDATION: true
+      file: config/config/director/create-env.yml
+    - task: find-ami
+      params:
+        REGION: ((aws_region))
+      config:
+        platform: linux
+        image_resource:
+          type: docker-image
+          source:
+            repository: cfinfrastructure/releng-tools
+            tag: latest
+        inputs:
+        - name: pivnet-opsmgr
+        outputs:
+        - name: ami
+        run:
+          path: bash
+          args:
+          - -c
+          - |
+            set -eo pipefail 
+            ami=$(grep $REGION pivnet-opsmgr/*.yml | cut -d' ' -f2)
+            echo $ami > ami/ami
   - task: delete-installation
     image: platform-automation-image-s3
     file: platform-automation-tasks-s3/tasks/delete-installation.yml
@@ -904,6 +936,7 @@ jobs:
       inputs:
       - name: template
       - name: terraform-state
+      - name: ami
       outputs:
       - name: tfstate-output
       run:
@@ -912,6 +945,7 @@ jobs:
         - -c
         - |
           set -e
+          export TF_VAR_ops_manager_ami=$(cat ami/ami)
 
           # Remove SSH/TCP LB
           sed -i 's|resource "aws_security_group" "ssh_lb"|/* resource "aws_security_group" "ssh_lb"|' template/modules/pas/lbs.tf
@@ -1013,4 +1047,3 @@ jobs:
           ssh -q -i opsman.pem \
             -o "StrictHostKeyChecking=no" \
             ubuntu@${OM_TARGET} "echo $BOSH_CLI | sed 's/ /\n/g' | sed 's/^/export /g' | sed '/bosh/d' | sudo tee /etc/profile.d/bosh.sh" > /dev/null
-
