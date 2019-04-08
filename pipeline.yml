@@ -66,6 +66,16 @@ resources:
     region_name: ap-northeast-1
     bucket: p-automation
     regexp: platform-automation-image-(.*).tgz
+- name: installation
+  type: s3
+  source:
+    disable_ssl: false
+    access_key_id: ((aws_access_key_id))
+    secret_access_key: ((aws_secret_access_key))
+    endpoint: ((s3_endpoint))
+    bucket: ((s3_output_bucket))
+    region_name: ((aws_region))
+    versioned_file: installation.zip
 
 jobs:
 - name: create-initial-terraform-state
@@ -1047,3 +1057,185 @@ jobs:
           ssh -q -i opsman.pem \
             -o "StrictHostKeyChecking=no" \
             ubuntu@${OM_TARGET} "echo $BOSH_CLI | sed 's/ /\n/g' | sed 's/^/export /g' | sed '/bosh/d' | sudo tee /etc/profile.d/bosh.sh" > /dev/null
+
+################
+- name: export-installation
+  build_logs_to_retain: 5
+  plan:
+  - aggregate:
+    - get: terraform-state
+    - get: config
+    - get: platform-automation-tasks-s3
+      params:
+        unpack: true
+    - get: platform-automation-image-s3
+      params:
+        unpack: true
+  - task: create-env
+    params:
+      OM_USERNAME: ((ops_mgr_usr))
+      OM_PASSWORD: ((ops_mgr_pwd))
+      OM_DECRYPTION_PASSPHRASE: ((om_decryption_pwd))
+      OM_SKIP_SSL_VALIDATION: true
+    file: config/config/director/create-env.yml
+  - task: export-installation
+    params:
+      INSTALLATION_FILE: installation.zip
+    image: platform-automation-image-s3
+    file: platform-automation-tasks-s3/tasks/export-installation.yml
+  - put: installation
+    params:
+      file: installation/installation.zip
+
+
+- name: upgrade-opsman
+  build_logs_to_retain: 5
+  plan:
+  - aggregate:
+    - get: installation
+      passed:
+      - export-installation
+    - get: terraform-state
+    - get: pivnet-opsmgr
+      params:
+        globs: ["*aws*.yml"]
+    - get: config
+    - get: platform-automation-tasks-s3
+      params:
+        unpack: true
+    - get: platform-automation-image-s3
+      params:
+        unpack: true
+  - aggregate:
+    - task: create-env
+      params:
+        OM_USERNAME: ((ops_mgr_usr))
+        OM_PASSWORD: ((ops_mgr_pwd))
+        OM_DECRYPTION_PASSPHRASE: ((om_decryption_pwd))
+        OM_SKIP_SSL_VALIDATION: true
+      file: config/config/director/create-env.yml
+    - task: create-state
+      params:
+        TF_DIR: terraform-state
+        IAAS: aws
+      config:
+        platform: linux
+        image_resource:
+          type: docker-image
+          source:
+            repository: cfinfrastructure/releng-tools
+            tag: latest
+        inputs:
+        - name: terraform-state
+        outputs:
+        - name: state
+        run:
+          path: bash
+          args: 
+          - -c
+          - |
+            set -e
+            export VM_ID=$(cat $TF_DIR/terraform.tfstate | jq -r '.modules[] | select(.resources["aws_instance.ops_manager"] != null).resources["aws_instance.ops_manager"].primary.attributes.id')
+            cat <<EOF > state/state.yml
+            iaas: ${IAAS}
+            vm_id: ${VM_ID}
+            EOF
+    - task: create-image
+      config:
+        platform: linux
+        image_resource:
+          type: docker-image
+          source:
+            repository: cfinfrastructure/releng-tools
+            tag: latest
+        inputs:
+        - name: pivnet-opsmgr
+        outputs:
+        - name: image
+        run:
+          path: bash
+          args: 
+          - -c
+          - |
+            set -e
+            mv pivnet-opsmgr/*.yml image/opsman.yml
+    - task: create-vars
+      params:
+        TF_DIR: terraform-state
+      config:
+        platform: linux
+        image_resource:
+          type: docker-image
+          source:
+            repository: cfinfrastructure/releng-tools
+            tag: latest
+        inputs:
+        - name: config
+        - name: terraform-state
+        outputs:
+        - name: vars
+        run:
+          path: bash
+          args: 
+          - -c
+          - |
+            set -e
+            ./config/config/director/create-vars.sh > vars/vars.yml
+    - task: create-config
+      params:
+        TF_DIR: terraform-state
+      config:
+        platform: linux
+        image_resource:
+          type: docker-image
+          source:
+            repository: cfinfrastructure/releng-tools
+            tag: latest
+        inputs:
+        - name: config
+        - name: terraform-state
+        outputs:
+        - name: created-config
+        run:
+          path: bash
+          args: 
+          - -c
+          - |
+            set -e
+            export ACCESS_KEY_ID=$(terraform output --state=${TF_DIR}/terraform.tfstate ops_manager_iam_user_access_key)
+            export SECRET_ACCESS_KEY=$(terraform output --state=${TF_DIR}/terraform.tfstate ops_manager_iam_user_secret_key)
+            export SECURITY_GROUP=$(terraform output --state=${TF_DIR}/terraform.tfstate ops_manager_security_group_id)
+            export REGION=$(terraform output --state=${TF_DIR}/terraform.tfstate region)
+            export KEY_PAIR_NAME=$(terraform output --state=${TF_DIR}/terraform.tfstate ops_manager_ssh_public_key_name)
+            export PRIVATE_IP=$(terraform output --state=${TF_DIR}/terraform.tfstate ops_manager_private_ip)
+            export PUBLIC_IP=$(terraform output --state=${TF_DIR}/terraform.tfstate ops_manager_public_ip)
+            export SUBNET_ID=$(terraform output --state=${TF_DIR}/terraform.tfstate -json public_subnet_ids | jq -r '.value[0]')
+            export INSTANCE_PROFILE_NAME=$(terraform output --state=${TF_DIR}/terraform.tfstate ops_manager_iam_instance_profile_name)
+            export VM_NAME=$(cat $TF_DIR/terraform.tfstate | jq -r '.modules[] | select(.resources["aws_instance.ops_manager"] != null).resources["aws_instance.ops_manager"].primary.attributes["tags.Name"]')
+            export INSTANCE_TYPE=$(cat $TF_DIR/terraform.tfstate | jq -r '.modules[] | select(.resources["aws_instance.ops_manager"] != null).resources["aws_instance.ops_manager"].primary.attributes.instance_type')
+            export BOOT_DISK_SIZE=$(cat $TF_DIR/terraform.tfstate | jq -r '.modules[] | select(.resources["aws_instance.ops_manager"] != null).resources["aws_instance.ops_manager"].primary.attributes["root_block_device.0.volume_size"]')
+            cat <<EOF > created-config/opsman.yml
+            opsman-configuration:
+              aws:
+                access_key_id: ${ACCESS_KEY_ID}
+                secret_access_key: ${SECRET_ACCESS_KEY}
+                region: ${REGION}
+                vm_name: ${VM_NAME}
+                boot_disk_size: ${BOOT_DISK_SIZE}
+                vpc_subnet_id: ${SUBNET_ID}
+                security_group_id: ${SECURITY_GROUP}
+                key_pair_name: ${KEY_PAIR_NAME}
+                iam_instance_profile_name: ${INSTANCE_PROFILE_NAME}
+                instance_type: ${INSTANCE_TYPE}
+                public_ip: ${PUBLIC_IP}
+                private_ip: ${PRIVATE_IP}
+            EOF
+            cat created-config/opsman.yml
+  - task: upgrade-opsman
+    params:
+      DIRECTOR_CONFIG_FILE: config/director/config.yml
+      VARS_FILES: vars/vars.yml
+    image: platform-automation-image-s3
+    input_mapping:
+      config: created-config
+    file: platform-automation-tasks-s3/tasks/upgrade-opsman.yml
